@@ -1,8 +1,7 @@
-﻿using System.Configuration;
-using System.Data;
-using System.Windows;
-using System.Threading.Tasks;
+﻿using LaptopHealth.Services;
 using LaptopHealth.Views;
+using Microsoft.Extensions.DependencyInjection;
+using System.Windows;
 
 namespace LaptopHealth
 {
@@ -11,23 +10,46 @@ namespace LaptopHealth
     /// </summary>
     public partial class App : Application
     {
+        public static IServiceProvider? ServiceProvider { get; private set; }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
 
-            // Show loading window
-            LoadingWindow loadingWindow = new LoadingWindow();
+            // Show loading window first
+            LoadingWindow loadingWindow = new();
             loadingWindow.Show();
 
+            // Run initialization on background thread
             Task.Run(async () =>
             {
+                var services = new ServiceCollection();
+
+                services.AddScoped<ICounterService, CounterService>();
+
+                ServiceProvider = services.BuildServiceProvider();
+
+                RegisterTestPages();
+
+                // Show main window on UI thread
                 Dispatcher.Invoke(() =>
                 {
-                    MainWindow mainWindow = new MainWindow();
+                    MainWindow mainWindow = new();
                     mainWindow.Show();
                     loadingWindow.Close();
                 });
             });
+        }
+
+        /// <summary>
+        /// Registers all available test pages
+        /// </summary>
+        private static void RegisterTestPages()
+        {
+            TestRegistry.Register<CounterTestPage>(
+                "Counter Test",
+                "Tests counting functionality"
+            );
         }
     }
 }
