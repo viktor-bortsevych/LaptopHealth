@@ -1,12 +1,102 @@
-﻿<Window x:Class="LaptopHealth.MainWindow"
+﻿<Window x:Class="LaptopHealth.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:LaptopHealth"
+        xmlns:local="clr-namespace:LaptopHealth.Views"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="LaptopHealth" Height="600" Width="900"
+        Background="#F5F5F5">
     <Grid>
+        <Grid.RowDefinitions>
+            <!-- Top Section: Progress Menu with Navigation -->
+            <RowDefinition Height="30"/>
+            <!-- Main Content Area -->
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
+        <!-- Top Section (Progress + Navigation) -->
+        <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+            <Grid VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <!-- Left Navigation Button -->
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Progress Indicators -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Right Navigation Button -->
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Previous Button (Left) -->
+                <Button Grid.Column="0"
+                        x:Name="PreviousButton"
+                        Content="&lt;"
+                        Width="28"
+                        Height="28"
+                        FontSize="14"
+                        FontWeight="Bold"
+                        Background="#007ACC"
+                        Foreground="White"
+                        Cursor="Hand"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="8,0,0,0"
+                        Padding="0"
+                        Click="PreviousButton_Click"/>
+
+                <!-- Progress Menu (Center) -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <!-- Progress Indicators Container -->
+                    <StackPanel x:Name="ProgressIndicatorsPanel" Orientation="Horizontal" HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Next Button (Right) -->
+                <Button Grid.Column="2"
+                        x:Name="NextButton"
+                        Content="&gt;"
+                        Width="28"
+                        Height="28"
+                        FontSize="14"
+                        FontWeight="Bold"
+                        Background="#007ACC"
+                        Foreground="White"
+                        Cursor="Hand"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="0,0,8,0"
+                        Padding="0"
+                        Click="NextButton_Click"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Area (Middle) -->
+        <Border Grid.Row="1" Background="White" Margin="20">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- This area will contain test content: graphics, buttons, etc. -->
+                <TextBlock x:Name="CurrentTestName" 
+                           Text="Test Name" 
+                           FontSize="24" 
+                           FontWeight="Bold" 
+                           Foreground="#333"
+                           TextAlignment="Center"
+                           Margin="0,0,0,20"/>
+                
+                <ContentControl x:Name="TestContentArea" 
+                                Width="600" 
+                                Height="300" 
+                                Background="#F9F9F9"
+                                BorderBrush="#E0E0E0"
+                                BorderThickness="1"/>
+                
+                <TextBlock x:Name="CurrentTestDescription" 
+                           Text="Test Description" 
+                           FontSize="14" 
+                           Foreground="#666"
+                           TextAlignment="Center"
+                           Margin="0,20,0,0"
+                           Width="600"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

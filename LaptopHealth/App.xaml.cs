@@ -2,6 +2,7 @@
 using System.Data;
 using System.Windows;
 using System.Threading.Tasks;
+using LaptopHealth.Views;
 
 namespace LaptopHealth
 {
@@ -18,13 +19,8 @@ namespace LaptopHealth
             LoadingWindow loadingWindow = new LoadingWindow();
             loadingWindow.Show();
 
-            // Simulate loading work (replace with your actual initialization)
             Task.Run(async () =>
             {
-                // Add your initialization code here
-                await Task.Delay(2000); // Example: 2 second delay
-
-                // Show main window and close loading window
                 Dispatcher.Invoke(() =>
                 {
                     MainWindow mainWindow = new MainWindow();

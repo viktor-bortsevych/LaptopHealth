@@ -1,4 +1,4 @@
-<Window x:Class="LaptopHealth.LoadingWindow"
+<Window x:Class="LaptopHealth.Views.LoadingWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Loading" 
@@ -14,8 +14,8 @@
         <!-- Loading image centered on screen with responsive sizing -->
         <Grid HorizontalAlignment="Center" 
               VerticalAlignment="Center"
-              Width="500"
-              Height="500">
+              Width="400"
+              Height="100">
             <Image Source="/Resources/loading.png" 
                    Stretch="Uniform"
                    RenderOptions.BitmapScalingMode="HighQuality"/>

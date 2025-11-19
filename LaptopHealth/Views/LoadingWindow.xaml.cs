@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace LaptopHealth
+namespace LaptopHealth.Views
 {
     /// <summary>
     /// Interaction logic for LoadingWindow.xaml
