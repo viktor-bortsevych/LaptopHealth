@@ -8,7 +8,15 @@
         WindowState="Maximized"
         ShowInTaskbar="False"
         Topmost="True">
-    <Grid Background="#99000000">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Colors.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    
+    <Grid Background="#00000000">
         <!-- Semi-transparent dark overlay background -->
         
         <!-- Loading image centered on screen with responsive sizing -->
@@ -16,7 +24,7 @@
               VerticalAlignment="Center"
               Width="400"
               Height="100">
-            <Image Source="/Resources/loading.png" 
+            <Image Source="/Resources/Images/loading.png" 
                    Stretch="Uniform"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
         </Grid>

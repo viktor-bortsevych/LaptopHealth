@@ -1,0 +1,237 @@
+<Window x:Class="LaptopHealth.Views.StylesPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Styles Preview" Height="900" Width="1000"
+        Background="{StaticResource BackgroundBrush}"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Colors.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/ButtonStyles.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/CommonStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="30">
+            <!-- Header -->
+            <TextBlock Text="LaptopHealth Design System" Style="{StaticResource Headline1}" Foreground="{StaticResource PrimaryBrush}"/>
+            <TextBlock Text="Complete styles and components preview" Style="{StaticResource SubtleText}" Margin="16,0,0,30"/>
+            
+            <!-- Section: Button Styles -->
+            <TextBlock Text="Button Styles" Style="{StaticResource Headline1}" Margin="0,20,0,15"/>
+            
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <!-- Default Button -->
+                    <StackPanel Margin="0,0,0,15">
+                        <TextBlock Text="Default Button Style" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="Default Button" Style="{StaticResource DefaultButtonStyle}" Margin="0,0,10,0"/>
+                            <Button Content="Disabled" Style="{StaticResource DefaultButtonStyle}" IsEnabled="False"/>
+                        </StackPanel>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <!-- Accent Button -->
+                    <StackPanel Margin="0,15,0,15">
+                        <TextBlock Text="Accent Button Style" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="Accent Button" Style="{StaticResource AccentButtonStyle}" Margin="0,0,10,0"/>
+                            <Button Content="Disabled" Style="{StaticResource AccentButtonStyle}" IsEnabled="False"/>
+                        </StackPanel>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <!-- Outline Button -->
+                    <StackPanel Margin="0,15,0,15">
+                        <TextBlock Text="Outline Button Style" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="Outline Button" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,10,0"/>
+                            <Button Content="Disabled" Style="{StaticResource OutlineButtonStyle}" IsEnabled="False"/>
+                        </StackPanel>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <!-- Text Button -->
+                    <StackPanel Margin="0,15,0,0">
+                        <TextBlock Text="Text Button Style (Flat)" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="Text Button" Style="{StaticResource TextButtonStyle}" Margin="0,0,10,0"/>
+                            <Button Content="Disabled" Style="{StaticResource TextButtonStyle}" IsEnabled="False"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            
+            <!-- Section: Text Styles -->
+            <TextBlock Text="Text Styles" Style="{StaticResource Headline1}" Margin="0,30,0,15"/>
+            
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="Headline 1" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="This is Headline 1 - Use for main page titles" Style="{StaticResource Headline1}" Margin="0,10,0,0"/>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <StackPanel Margin="0,20,0,20">
+                        <TextBlock Text="Headline 2" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="This is Headline 2 - Use for section headers" Style="{StaticResource Headline2}" Margin="0,10,0,0"/>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <StackPanel Margin="0,20,0,20">
+                        <TextBlock Text="Body Text" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="This is body text - Lorem ipsum dolor sit amet, consectetur adipiscing elit. Use this style for regular content and paragraphs." Style="{StaticResource BodyText}" Margin="0,10,0,0"/>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <StackPanel Margin="0,20,0,0">
+                        <TextBlock Text="Subtle Text" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="This is subtle text - Use for hints, captions, and secondary information" Style="{StaticResource SubtleText}" Margin="0,10,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            
+            <!-- Section: Card Style -->
+            <TextBlock Text="Card/Container Style" Style="{StaticResource Headline1}" Margin="0,30,0,15"/>
+            
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Card Title" Style="{StaticResource Headline2}"/>
+                    <TextBlock Text="This demonstrates the card styling. Cards are useful containers for grouping related content." Style="{StaticResource BodyText}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Content="Action" Style="{StaticResource DefaultButtonStyle}" Margin="0,0,10,0"/>
+                        <Button Content="Cancel" Style="{StaticResource OutlineButtonStyle}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            
+            <!-- Section: Color Palette -->
+            <TextBlock Text="Color Palette" Style="{StaticResource Headline1}" Margin="0,30,0,15"/>
+            
+            <!-- Primary Colors -->
+            <TextBlock Text="Primary Colors" Style="{StaticResource Headline2}" Margin="0,0,0,10"/>
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <Border Background="{StaticResource PrimaryLightBrush}" Height="100" Margin="4" CornerRadius="4">
+                    <TextBlock Text="Primary Light" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource PrimaryBrush}" Height="100" Margin="4" CornerRadius="4" Grid.Column="1">
+                    <TextBlock Text="Primary" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource PrimaryDarkBrush}" Height="100" Margin="4" CornerRadius="4" Grid.Column="2">
+                    <TextBlock Text="Primary Dark" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+            </Grid>
+            
+            <!-- Accent Colors -->
+            <TextBlock Text="Accent Colors" Style="{StaticResource Headline2}" Margin="0,0,0,10"/>
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <Border Background="{StaticResource AccentLightBrush}" Height="100" Margin="4" CornerRadius="4">
+                    <TextBlock Text="Accent Light" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource AccentBrush}" Height="100" Margin="4" CornerRadius="4" Grid.Column="1">
+                    <TextBlock Text="Accent" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource AccentDarkBrush}" Height="100" Margin="4" CornerRadius="4" Grid.Column="2">
+                    <TextBlock Text="Accent Dark" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+            </Grid>
+            
+            <!-- Status Colors -->
+            <TextBlock Text="Status Colors" Style="{StaticResource Headline2}" Margin="0,0,0,10"/>
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <Border Background="{StaticResource SuccessBrush}" Height="80" Margin="4" CornerRadius="4">
+                    <TextBlock Text="Success" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource WarningBrush}" Height="80" Margin="4" CornerRadius="4" Grid.Column="1">
+                    <TextBlock Text="Warning" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource ErrorBrush}" Height="80" Margin="4" CornerRadius="4" Grid.Column="2">
+                    <TextBlock Text="Error" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource InfoBrush}" Height="80" Margin="4" CornerRadius="4" Grid.Column="3">
+                    <TextBlock Text="Info" Foreground="{StaticResource TextInvertBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+            </Grid>
+            
+            <!-- Text Colors -->
+            <TextBlock Text="Text Colors" Style="{StaticResource Headline2}" Margin="0,0,0,10"/>
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <Border Background="{StaticResource BackgroundBrush}" Height="80" Margin="4" CornerRadius="4" BorderBrush="{StaticResource SurfaceBrush}" BorderThickness="1">
+                    <TextBlock Text="Primary Text" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource BackgroundBrush}" Height="80" Margin="4" CornerRadius="4" BorderBrush="{StaticResource SurfaceBrush}" BorderThickness="1" Grid.Column="1">
+                    <TextBlock Text="Secondary Text" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+                <Border Background="{StaticResource BackgroundBrush}" Height="80" Margin="4" CornerRadius="4" BorderBrush="{StaticResource SurfaceBrush}" BorderThickness="1" Grid.Column="2">
+                    <TextBlock Text="Hint Text" Foreground="{StaticResource TextHintBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+                </Border>
+            </Grid>
+            
+            <!-- Section: Input Controls -->
+            <TextBlock Text="Input Controls" Style="{StaticResource Headline1}" Margin="0,30,0,15"/>
+            
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <!-- TextBox -->
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="TextBox" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBox Style="{StaticResource DefaultTextBoxStyle}" Text="Sample text input" Height="40" Margin="0,10,0,10"/>
+                        <TextBox Style="{StaticResource DefaultTextBoxStyle}" Text="Disabled input" Height="40" IsEnabled="False"/>
+                    </StackPanel>
+                    
+                    <Border Style="{StaticResource DividerStyle}"/>
+                    
+                    <!-- ComboBox -->
+                    <StackPanel Margin="0,20,0,0">
+                        <TextBlock Text="ComboBox" Style="{StaticResource Headline2}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <ComboBox Style="{StaticResource DefaultComboBoxStyle}" Height="40" Margin="0,10,0,0">
+                            <ComboBoxItem>Option 1</ComboBoxItem>
+                            <ComboBoxItem>Option 2</ComboBoxItem>
+                            <ComboBoxItem>Option 3</ComboBoxItem>
+                        </ComboBox>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            
+            <!-- Footer -->
+            <Border Style="{StaticResource DividerStyle}" Margin="0,30,0,20"/>
+            <TextBlock Text="2024 LaptopHealth Design System" Style="{StaticResource SubtleText}" TextAlignment="Center"/>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

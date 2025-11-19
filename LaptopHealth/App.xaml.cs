@@ -1,4 +1,5 @@
-﻿using LaptopHealth.Services;
+﻿using LaptopHealth.Services.Infrastructure;
+using LaptopHealth.Services.Interfaces;
 using LaptopHealth.Views;
 using Microsoft.Extensions.DependencyInjection;
 using System.Windows;

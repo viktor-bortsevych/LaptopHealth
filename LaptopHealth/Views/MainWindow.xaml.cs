@@ -2,7 +2,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using LaptopHealth.Services;
+using LaptopHealth.Services.Infrastructure;
 
 namespace LaptopHealth.Views
 {
@@ -43,47 +43,26 @@ namespace LaptopHealth.Views
 
                 var button = new Button
                 {
-                    Width = 12,
-                    Height = 12,
-                    Padding = new Thickness(0),
-                    Margin = new Thickness(6, 0, 6, 0),
-                    Cursor = Cursors.Hand,
-                    BorderThickness = new Thickness(0),
-                    Background = i == currentTestIndex ?
-                        System.Windows.Media.Brushes.DodgerBlue :
-                        System.Windows.Media.Brushes.LightGray,
                     Tag = testIndex,
-                    ToolTip = testPages[i].Name // Add tooltip for better UX
+                    ToolTip = testPages[i].Name
                 };
 
-                var style = new Style { TargetType = typeof(Button) };
-                style.Setters.Add(new Setter(Button.TemplateProperty, CircleButtonTemplate));
-                button.Style = style;
+                // Apply the style from resources
+                button.Style = (Style)Application.Current.FindResource("ProgressIndicatorButtonStyle");
+                
+                // Set the active/inactive background color using resources
+                if (i == currentTestIndex)
+                {
+                    button.Background = (System.Windows.Media.Brush)Application.Current.FindResource("PrimaryBrush");
+                }
+                else
+                {
+                    button.Background = (System.Windows.Media.Brush)Application.Current.FindResource("InactiveIndicatorBrush");
+                }
 
                 button.Click += (s, e) => LoadTest(testIndex);
 
                 ProgressIndicatorsPanel.Children.Add(button);
-            }
-        }
-
-        private static ControlTemplate CircleButtonTemplate
-        {
-            get
-            {
-                var template = new ControlTemplate(typeof(Button));
-                var border = new FrameworkElementFactory(typeof(Border));
-
-                border.SetValue(Border.BackgroundProperty,
-                    new System.Windows.Data.Binding("Background")
-                    {
-                        RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent
-                    });
-                border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-                border.SetValue(WidthProperty, 12.0);
-                border.SetValue(HeightProperty, 12.0);
-
-                template.VisualTree = border;
-                return template;
             }
         }
 
@@ -141,9 +120,14 @@ namespace LaptopHealth.Views
             {
                 if (ProgressIndicatorsPanel.Children[i] is Button button)
                 {
-                    button.Background = i == currentTestIndex ?
-                        System.Windows.Media.Brushes.DodgerBlue :
-                        System.Windows.Media.Brushes.LightGray;
+                    if (i == currentTestIndex)
+                    {
+                        button.Background = (System.Windows.Media.Brush)Application.Current.FindResource("PrimaryBrush");
+                    }
+                    else
+                    {
+                        button.Background = (System.Windows.Media.Brush)Application.Current.FindResource("InactiveIndicatorBrush");
+                    }
                 }
             }
         }

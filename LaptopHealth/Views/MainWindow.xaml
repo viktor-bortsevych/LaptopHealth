@@ -6,21 +6,29 @@
         xmlns:local="clr-namespace:LaptopHealth.Views"
         mc:Ignorable="d"
         Title="LaptopHealth" Height="600" Width="900"
-        Background="#F5F5F5">
+        Background="{StaticResource SurfaceBrush}"
+        Icon="pack://application:,,,/Resources/Images/app.ico">
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Colors.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/ButtonStyles.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/CommonStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        </ResourceDictionary>
     </Window.Resources>
     
     <Grid>
         <Grid.RowDefinitions>
             <!-- Top Section: Progress Menu with Navigation -->
-            <RowDefinition Height="30"/>
+            <RowDefinition Height="40"/>
             <!-- Main Content Area - Test Page -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- Top Section (Progress + Navigation) -->
-        <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="{StaticResource BackgroundBrush}" BorderBrush="{StaticResource SurfaceBrush}" BorderThickness="0,0,0,2">
             <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <!-- Left Navigation Button -->
@@ -37,15 +45,14 @@
                         Content="◀"
                         Width="28"
                         Height="28"
-                        FontSize="14"
-                        FontWeight="Bold"
-                        Background="#007ACC"
-                        Foreground="White"
-                        Cursor="Hand"
+                        FontSize="16"
+                        FontWeight="Normal"
+                        FontFamily="{StaticResource DongleFontFamily}"
+                        Style="{StaticResource OutlineButtonStyle}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Margin="8,0,0,0"
-                        Padding="0"
+                        Margin="8,2,0,2"
+                        Padding="0,2,0,0"
                         Click="PreviousButton_Click"
                         Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
@@ -61,22 +68,21 @@
                         Content="▶"
                         Width="28"
                         Height="28"
-                        FontSize="14"
+                        FontSize="16"
                         FontWeight="Bold"
-                        Background="#007ACC"
-                        Foreground="White"
-                        Cursor="Hand"
+                        FontFamily="{StaticResource DongleFontFamily}"
+                        Style="{StaticResource OutlineButtonStyle}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,0,8,0"
-                        Padding="0"
+                        Padding="0,2,0,0"
                         Click="NextButton_Click"
                         Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </Grid>
         </Border>
 
         <!-- Main Content Area - Dynamic Test Page -->
-        <Border Grid.Row="1" Background="White">
+        <Border Grid.Row="1" Background="{StaticResource BackgroundBrush}">
             <ContentControl x:Name="TestContentArea" />
         </Border>
     </Grid>
