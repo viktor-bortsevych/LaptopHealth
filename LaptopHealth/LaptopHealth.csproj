@@ -12,4 +12,8 @@
     <Resource Include="Resources\loading.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Services\" />
+  </ItemGroup>
+
 </Project>
