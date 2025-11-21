@@ -21,4 +21,7 @@
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource PrimaryColor}"/>
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource PrimaryColor}"/>
     
+    <!-- Light Gray for Inactive Progress Indicators (derived from DarkGray with opacity) -->
+    <SolidColorBrush x:Key="InactiveIndicatorBrush" Color="#D3D3D3"/>
+    
 </ResourceDictionary>

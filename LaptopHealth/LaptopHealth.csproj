@@ -24,7 +24,6 @@
   <ItemGroup>
     <Folder Include="Resources\Fonts\" />
     <Folder Include="Resources\Sounds\" />
-    <Folder Include="Services\Hardware\" />
     <Folder Include="ViewModels\" />
   </ItemGroup>
 

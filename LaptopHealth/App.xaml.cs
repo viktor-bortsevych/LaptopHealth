@@ -1,4 +1,5 @@
-﻿using LaptopHealth.Services.Infrastructure;
+﻿using LaptopHealth.Services.Hardware;
+using LaptopHealth.Services.Infrastructure;
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +27,9 @@ namespace LaptopHealth
             {
                 var services = new ServiceCollection();
 
-                services.AddScoped<ICounterService, CounterService>();
+                // Register camera services following the architecture:
+                services.AddScoped<ICameraHardwareService, CameraHardwareService>();
+                services.AddScoped<ICameraService, CameraService>();
 
                 ServiceProvider = services.BuildServiceProvider();
 
@@ -35,8 +38,8 @@ namespace LaptopHealth
                 // Show StylesPreviewWindow to demonstrate the design system
                 Dispatcher.Invoke(() =>
                 {
-                    StylesPreviewWindow previewWindow = new();
-                    previewWindow.Show();
+                    MainWindow mainWindow = new();
+                    mainWindow.Show();
                     loadingWindow.Close();
                 });
 
@@ -48,9 +51,10 @@ namespace LaptopHealth
         /// </summary>
         private static void RegisterTestPages()
         {
-            TestRegistry.Register<CounterTestPage>(
-                "Counter Test",
-                "Tests counting functionality"
+
+            TestRegistry.Register<CameraTestPage>(
+                "Camera Test",
+                "Tests camera device enumeration and control"
             );
         }
     }

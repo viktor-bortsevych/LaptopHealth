@@ -107,4 +107,38 @@
         </Setter>
     </Style>
     
+    <!-- Progress Indicator Button Style (Circular indicators: o-o-O-o) -->
+    <Style x:Key="ProgressIndicatorButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="12"/>
+        <Setter Property="Height" Value="12"/>
+        <Setter Property="Margin" Value="4,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <!-- Circular background -->
+                        <Ellipse x:Name="Circle"
+                                Fill="{TemplateBinding Background}"
+                                Width="{TemplateBinding Width}"
+                                Height="{TemplateBinding Height}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- Hover effect: slightly larger -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Circle" Property="Width" Value="14"/>
+                            <Setter TargetName="Circle" Property="Height" Value="14"/>
+                        </Trigger>
+                        <!-- Pressed effect: slightly smaller -->
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Circle" Property="Width" Value="10"/>
+                            <Setter TargetName="Circle" Property="Height" Value="10"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    
 </ResourceDictionary>

@@ -6,11 +6,12 @@
         xmlns:local="clr-namespace:LaptopHealth.Views"
         mc:Ignorable="d"
         Title="LaptopHealth" Height="600" Width="900"
-        Background="{StaticResource SurfaceBrush}"
+        Background="{StaticResource WhiteBrush}"
         Icon="pack://application:,,,/Resources/Images/app.ico">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Fonts.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Colors.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/ButtonStyles.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/CommonStyles.xaml"/>
@@ -28,7 +29,7 @@
         </Grid.RowDefinitions>
 
         <!-- Top Section (Progress + Navigation) -->
-        <Border Grid.Row="0" Background="{StaticResource BackgroundBrush}" BorderBrush="{StaticResource SurfaceBrush}" BorderThickness="0,0,0,2">
+        <Border Grid.Row="0" Background="{StaticResource WhiteBrush}" BorderBrush="{StaticResource PrimaryBrush}" BorderThickness="0,0,0,2">
             <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <!-- Left Navigation Button -->
@@ -82,7 +83,7 @@
         </Border>
 
         <!-- Main Content Area - Dynamic Test Page -->
-        <Border Grid.Row="1" Background="{StaticResource BackgroundBrush}">
+        <Border Grid.Row="1" Background="{StaticResource WhiteBrush}">
             <ContentControl x:Name="TestContentArea" />
         </Border>
     </Grid>
