@@ -5,6 +5,8 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <!-- Font Resources -->
+                <ResourceDictionary Source="Resources/Styles/Fonts.xaml"/>
                 <!-- Color Resources -->
                 <ResourceDictionary Source="Resources/Styles/Colors.xaml"/>
                 <!-- Button Styles -->

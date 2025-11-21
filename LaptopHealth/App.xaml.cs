@@ -32,13 +32,14 @@ namespace LaptopHealth
 
                 RegisterTestPages();
 
-                // Show main window on UI thread
+                // Show StylesPreviewWindow to demonstrate the design system
                 Dispatcher.Invoke(() =>
                 {
-                    MainWindow mainWindow = new();
-                    mainWindow.Show();
+                    StylesPreviewWindow previewWindow = new();
+                    previewWindow.Show();
                     loadingWindow.Close();
                 });
+
             });
         }
 
