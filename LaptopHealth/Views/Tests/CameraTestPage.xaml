@@ -31,37 +31,63 @@
             </Grid.RowDefinitions>
             
             <!-- Row 1, Col 1: Camera View Placeholder -->
-            <Border Grid.Row="0" 
-                    Style="{StaticResource CardStyle}"
-                    Background="{StaticResource WhiteBrush}"
-                    BorderBrush="{StaticResource PrimaryBrush}"
-                    BorderThickness="2"
-                    Padding="0">
-                <Grid>
-                    <!-- Placeholder for Camera Feed -->
-                    <Viewbox>
-                        <TextBlock Text="📷" 
-                                  Foreground="{StaticResource PrimaryBrush}"
-                                  FontSize="120"
+            <Border Grid.Row="0"
+                Background="{StaticResource DarkGrayBrush}"
+                BorderBrush="{StaticResource PrimaryBrush}"
+                BorderThickness="2"
+                CornerRadius="8"
+                Padding="0">
+
+                <Border Background="{StaticResource DarkGrayBrush}"
+                    CornerRadius="8">
+
+                    <Grid x:Name="ClipGrid" SizeChanged="ClipGrid_SizeChanged">
+                        <Grid.Clip>
+                            <RectangleGeometry x:Name="GridClip"
+                                   RadiusX="8" RadiusY="8"/>
+                            <!-- CHANGED FROM 6 TO 8 -->
+                        </Grid.Clip>
+
+                        <!-- Aspect Ratio Container: 16:9 -->
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <!-- This dummy control maintains 16:9 aspect ratio -->
+                        <Canvas Visibility="Hidden">
+                            <Rectangle Width="16" Height="9"/>
+                        </Canvas>
+                        
+                        <!-- Placeholder for Camera Feed -->
+                        <Viewbox x:Name="CameraPlaceholder"
+                                 Stretch="Uniform"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center">
+                            <TextBlock Text="📷" 
+                                      Foreground="{StaticResource WhiteBrush}"
+                                      FontSize="120"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Opacity="0.3"
+                                      LineHeight="1"/>
+                        </Viewbox>
+                        
+                        <!-- Camera Preview Image (Will be used when camera is active) -->
+                        <Image x:Name="CameraPreview" 
+                              Stretch="UniformToFill"
+                              Visibility="Collapsed"/>
+                        
+                        <!-- Overlay Text -->
+                        <TextBlock x:Name="CameraStatusText"
+                                  Text="Camera Preview" 
+                                  Style="{StaticResource HeadlineText}"
+                                  Foreground="{StaticResource WhiteBrush}"
+                                  FontSize="28"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center"
-                                  Opacity="0.3"/>
-                    </Viewbox>
-                    
-                    <!-- Camera Preview Image (Will be used when camera is active) -->
-                    <Image x:Name="CameraPreview" 
-                          Stretch="Uniform"
-                          Visibility="Collapsed"/>
-                    
-                    <!-- Overlay Text -->
-                    <TextBlock x:Name="CameraStatusText"
-                              Text="Camera Preview" 
-                              Style="{StaticResource HeadlineText}"
-                              Foreground="{StaticResource PrimaryBrush}"
-                              FontSize="28"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Center"/>
-                </Grid>
+                                  IsHitTestVisible="False"/>
+                    </Grid>
+                </Border>
             </Border>
             
             <!-- Row 2, Col 1: Description -->
@@ -115,11 +141,20 @@
                     <ComboBox x:Name="DeviceComboBox"
                              Style="{StaticResource DefaultComboBoxStyle}"
                              Height="40"
-                             SelectionChanged="DeviceComboBox_SelectionChanged"/>
+                             SelectionChanged="DeviceComboBox_SelectionChanged"
+                             IsEnabled="False"/>
+                    <TextBlock x:Name="NoDevicesMessage"
+                              Text="No camera devices found"
+                              Style="{StaticResource BodyText}"
+                              FontSize="12"
+                              Foreground="{StaticResource DarkGrayBrush}"
+                              Margin="0,8,0,0"
+                              Visibility="Visible"
+                              TextAlignment="Center"/>
                 </StackPanel>
             </Border>
             
-            <!-- Row 3, Col 2: Start/Stop Button -->
+            <!-- Row 3, Col 2: Start/Stop Button and Refresh Button -->
             <Border Grid.Row="2" 
                     Style="{StaticResource CardStyle}"
                     Margin="0,0,0,10">
@@ -129,11 +164,30 @@
                               FontSize="12"
                               Foreground="{StaticResource DarkGrayBrush}"
                               Margin="0,0,0,8"/>
-                    <Button x:Name="StartStopButton"
-                           Content="Start Camera"
-                           Style="{StaticResource DefaultButtonStyle}"
-                           Height="44"
-                           Click="StartStopButton_Click"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <Button Grid.Column="0"
+                               x:Name="StartStopButton"
+                               Content="Start Camera"
+                               Style="{StaticResource DefaultButtonStyle}"
+                               Height="44"
+                               Click="StartStopButton_Click"
+                               Margin="0,0,8,0"/>
+                        
+                        <!-- Text Button -->
+                        <Button Grid.Column="1"
+                               x:Name="RefreshDevicesButton"
+                               Content="🔄"
+                               Style="{StaticResource TextButtonStyle}"
+                               FontSize="30"
+                               Padding="0"
+                               Click="RefreshDevicesButton_Click"
+                               ToolTip="Refresh camera device list"/>
+                    </Grid>
                 </StackPanel>
             </Border>
             

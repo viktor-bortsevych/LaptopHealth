@@ -28,7 +28,7 @@ namespace LaptopHealth
                 var services = new ServiceCollection();
 
                 // Register camera services following the architecture:
-                services.AddScoped<ICameraHardwareService, CameraHardwareService>();
+                services.AddScoped<ICameraHardwareService, CameraOpenCvService>();
                 services.AddScoped<ICameraService, CameraService>();
 
                 ServiceProvider = services.BuildServiceProvider();
