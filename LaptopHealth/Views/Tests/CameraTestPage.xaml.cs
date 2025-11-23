@@ -12,14 +12,15 @@ namespace LaptopHealth.Views
         private readonly ICameraService _cameraService;
         private CancellationTokenSource? _frameCaptureTokenSource;
         private Task? _frameRenderTask;
-        private bool _isOperationInProgress = false;
-        private bool _isLoadingDevices = false; // FIX: Prevent selection during load
-        private DateTime _lastOperationTime = DateTime.MinValue;
+        
+        // New operation manager
+        private readonly SemaphoreSlim _uiOperationLock = new(1, 1);
+        private CancellationTokenSource? _currentOperationCts;
+        
+        private bool _isLoadingDevices = false;
 
-        private const int OPERATION_COOLDOWN_MS = 500;
         private const int FRAME_DELAY_MS = 33;
         private const int STOP_TIMEOUT_MS = 2000;
-        private const int DEVICE_RELEASE_DELAY_MS = 300; // FIX: Time for device to release
         private const int ERROR_RETRY_DELAY_MS = 100;
 
         public string TestName => "Camera Test";
@@ -42,32 +43,36 @@ namespace LaptopHealth.Views
 
         private async void CameraTestPage_Unloaded(object sender, RoutedEventArgs e)
         {
-            await SafeExecuteAsync("Page Cleanup", async () =>
+            try
             {
                 if (_cameraService.IsCameraRunning)
                 {
-                    await StopCameraAsync();
-                    await Task.Delay(500);
+                    _currentOperationCts?.Cancel();
+                    await StopCameraAsync(CancellationToken.None);
                 }
-            });
+                
+                _uiOperationLock.Dispose();
+                _currentOperationCts?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogError("Page Cleanup", ex);
+            }
         }
 
         #endregion
 
         #region Device Management
 
-        private async Task LoadAvailableDevicesAsync()
+        private async Task LoadAvailableDevicesAsync(CancellationToken ct = default)
         {
-            await SafeExecuteAsync("Load Devices", async () =>
-            {
-                _isLoadingDevices = true; // FIX: Block selection events
+            _isLoadingDevices = true; // Block SelectionChanged
 
+            try
+            {
                 var devices = (await _cameraService.GetAvailableDevicesAsync()).ToList();
 
                 DeviceComboBox.Items.Clear();
-
-                // FIX: Disable the flag BEFORE showing devices so SelectionChanged can fire
-                _isLoadingDevices = false;
 
                 if (devices.Count == 0)
                 {
@@ -76,24 +81,32 @@ namespace LaptopHealth.Views
                 else
                 {
                     ShowDevicesAvailableState(devices);
+                    
+                    // Auto-select first device (but DON'T auto-start - let user click Start button)
+                    DeviceComboBox.SelectedIndex = 0;
                 }
 
                 UpdateLastAction();
-            });
+            }
+            finally
+            {
+                _isLoadingDevices = false; // Re-enable SelectionChanged
+            }
         }
 
         #endregion
 
         #region Camera Control
 
-        private async Task StartCameraAsync()
+        private async Task StartCameraAsync(CancellationToken ct)
         {
-            // FIX: Check if device needs initialization
+            // Ensure device is selected
             if (_cameraService.SelectedDevice == null)
             {
                 if (DeviceComboBox.SelectedItem != null)
                 {
-                    await SelectDeviceAsync();
+                    var deviceName = DeviceComboBox.SelectedItem.ToString()!;
+                    await _cameraService.SelectDeviceAsync(deviceName);
                 }
                 else
                 {
@@ -102,13 +115,14 @@ namespace LaptopHealth.Views
                 }
             }
             
+            ct.ThrowIfCancellationRequested();
+            
+            // Start camera (service handles initialization internally)
             var result = await _cameraService.StartCameraAsync();
-
+            
             if (result)
             {
-                // Give hardware time to start producing frames
-                await Task.Delay(200);
-                StartFrameCapture();
+                StartFrameCapture(); // Immediately start rendering
                 UpdateUIForRunningCamera();
             }
             else
@@ -117,41 +131,34 @@ namespace LaptopHealth.Views
             }
         }
 
-        private async Task StopCameraAsync()
+        private async Task StopCameraAsync(CancellationToken ct)
         {
-            await CancelFrameCaptureAsync();
-            await WaitForFrameTaskCompletionAsync();
-            await StopCameraHardwareAsync();
-            await UpdateUIAfterStopAsync();
-            CleanupFrameCaptureResources();
-            UpdateUIForStoppedCamera();
-        }
-
-        private async Task CancelFrameCaptureAsync()
-        {
+            // Cancel frame capture
             if (_frameCaptureTokenSource != null)
             {
                 await _frameCaptureTokenSource.CancelAsync();
             }
-        }
-
-        private async Task WaitForFrameTaskCompletionAsync()
-        {
+            
+            // Wait for frame task (with timeout)
             if (_frameRenderTask != null && !_frameRenderTask.IsCompleted)
             {
-                await Task.WhenAny(_frameRenderTask, Task.Delay(STOP_TIMEOUT_MS));
+                await Task.WhenAny(_frameRenderTask, Task.Delay(STOP_TIMEOUT_MS, ct));
             }
-        }
-
-        private async Task StopCameraHardwareAsync()
-        {
+            
+            ct.ThrowIfCancellationRequested();
+            
+            // Stop hardware
             await _cameraService.StopCameraAsync();
-            await Task.Delay(100);
-        }
-
-        private async Task UpdateUIAfterStopAsync()
-        {
+            
+            // Update UI
             await Dispatcher.InvokeAsync(ClearCameraPreview);
+            
+            // Cleanup
+            _frameCaptureTokenSource?.Dispose();
+            _frameCaptureTokenSource = null;
+            _frameRenderTask = null;
+            
+            UpdateUIForStoppedCamera();
         }
 
         #endregion
@@ -162,12 +169,10 @@ namespace LaptopHealth.Views
         {
             if (IsFrameCaptureRunning())
             {
-                LogDebug("Previous frame capture still running");
                 return;
             }
 
             InitializeNewFrameCapture();
-            LogDebug("Frame capture started");
         }
 
         private bool IsFrameCaptureRunning()
@@ -188,98 +193,46 @@ namespace LaptopHealth.Views
 
             try
             {
-                int failureCount = 0;
-                int frameCount = 0;
-                const int MAX_CONSECUTIVE_FAILURES = 10;
-
-                while (ShouldContinueCapture(cancellationToken))
+                while (!cancellationToken.IsCancellationRequested && _cameraService.IsCameraRunning)
                 {
                     try
                     {
-                        await ProcessSingleFrameCycleAsync(cancellationToken);
-                        frameCount++;
-                        if (frameCount % 30 == 0) // Log every 30 frames
+                        var frameBytes = await _cameraService.GetCurrentFrameAsync();
+                        
+                        if (frameBytes != null && frameBytes.Length > 0)
                         {
-                            LogDebug($"Frame capture: {frameCount} frames processed");
+                            var bitmap = CreateBitmapFromBytes(frameBytes);
+                            
+                            if (bitmap != null)
+                            {
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    if (!cancellationToken.IsCancellationRequested)
+                                    {
+                                        ShowCameraPreview(bitmap);
+                                    }
+                                });
+                            }
                         }
-                        failureCount = 0; // Reset on success
+                        
+                        // Target ~30 FPS
+                        await Task.Delay(FRAME_DELAY_MS, cancellationToken);
                     }
                     catch (OperationCanceledException)
                     {
-                        throw;
+                        break;
                     }
                     catch (Exception ex)
                     {
-                        failureCount++;
-                        LogError($"Frame cycle (attempt {failureCount})", ex);
-
-                        if (failureCount >= MAX_CONSECUTIVE_FAILURES || ShouldExitOnError(cancellationToken))
-                        {
-                            throw new OperationCanceledException("Too many frame capture failures", ex);
-                        }
-
-                        await Task.Delay(ERROR_RETRY_DELAY_MS, cancellationToken);
+                        LogError("Frame capture", ex);
+                        await Task.Delay(ERROR_RETRY_DELAY_MS, cancellationToken); // Brief pause on error
                     }
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                LogDebug("Frame capture CANCELLED");
-            }
-            catch (Exception ex)
-            {
-                LogError("Frame capture loop", ex);
             }
             finally
             {
                 LogDebug("Frame capture loop COMPLETED");
             }
-        }
-
-        private async Task ProcessSingleFrameCycleAsync(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var frameBytes = await CaptureFrameBytesAsync();
-
-            if (IsValidFrameData(frameBytes))
-            {
-                await ConvertAndDisplayFrameAsync(frameBytes!, cancellationToken);
-                // Only delay if we successfully captured a frame
-                await DelayForNextFrameAsync(cancellationToken);
-            }
-            else
-            {
-                // If no frame available, wait a bit before retry
-                await Task.Delay(10, cancellationToken);
-            }
-        }
-
-        private async Task<byte[]?> CaptureFrameBytesAsync()
-        {
-            var frame = await _cameraService.GetCurrentFrameAsync();
-            if (frame == null)
-            {
-                LogDebug("No frame data received");
-            }
-            return frame;
-        }
-
-        private async Task ConvertAndDisplayFrameAsync(byte[] frameBytes, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var bitmap = CreateBitmapFromBytes(frameBytes);
-            if (bitmap == null)
-            {
-                LogDebug("Failed to create bitmap from frame bytes");
-                return;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await UpdateCameraPreviewAsync(bitmap, cancellationToken);
-            LogDebug("Frame displayed successfully");
         }
 
         private static BitmapImage? CreateBitmapFromBytes(byte[] frameBytes)
@@ -310,7 +263,7 @@ namespace LaptopHealth.Views
         {
             await Dispatcher.InvokeAsync(() =>
             {
-                if (ShouldContinueCapture(cancellationToken))
+                if (!cancellationToken.IsCancellationRequested)
                 {
                     ShowCameraPreview(bitmap);
                 }
@@ -324,26 +277,6 @@ namespace LaptopHealth.Views
             CameraPreview.Visibility = Visibility.Visible;
         }
 
-        private static async Task DelayForNextFrameAsync(CancellationToken cancellationToken)
-        {
-            await Task.Delay(FRAME_DELAY_MS, cancellationToken);
-        }
-
-        private bool ShouldExitOnError(CancellationToken cancellationToken)
-        {
-            return !_cameraService.IsCameraRunning || cancellationToken.IsCancellationRequested;
-        }
-
-        private bool ShouldContinueCapture(CancellationToken cancellationToken)
-        {
-            return !cancellationToken.IsCancellationRequested && _cameraService.IsCameraRunning;
-        }
-
-        private static bool IsValidFrameData(byte[]? frameBytes)
-        {
-            return frameBytes != null && frameBytes.Length > 0;
-        }
-
         private void CleanupFrameCaptureResources()
         {
             try
@@ -352,7 +285,7 @@ namespace LaptopHealth.Views
             }
             catch (ObjectDisposedException)
             {
-                LogDebug("Frame capture token source already disposed");
+                // Already disposed - this is fine
             }
 
             _frameCaptureTokenSource = null;
@@ -370,141 +303,96 @@ namespace LaptopHealth.Views
 
         private async void DeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (!CanHandleDeviceSelection())
-            {
+            // Ignore if loading or no selection
+            if (_isLoadingDevices || DeviceComboBox.SelectedItem == null)
                 return;
-            }
-
-            await ExecuteWithLock("Device Selection", async () =>
-            {
-                await PerformDeviceSelectionAsync();
-            });
-        }
-
-        private bool CanHandleDeviceSelection()
-        {
-            if (_isLoadingDevices)
-            {
-                return false;
-            }
             
-            if (DeviceComboBox.SelectedItem == null || !DeviceComboBox.IsEnabled)
+            try
             {
-                return false;
+                await ExecuteCameraOperationAsync(async ct =>
+                {
+                    var deviceName = DeviceComboBox.SelectedItem.ToString()!;
+                    
+                    // Stop current camera if running
+                    if (_cameraService.IsCameraRunning)
+                    {
+                        await StopCameraAsync(ct);
+                    }
+                    
+                    // Select new device (no delay needed!)
+                    await _cameraService.SelectDeviceAsync(deviceName);
+                    
+                    LogDebug($"Device switched to: {deviceName}");
+                    UpdateCameraStatus();
+                    UpdateLastAction();
+                    
+                }, "Switch Device");
             }
-
-            if (_isOperationInProgress)
+            catch (OperationCanceledException)
             {
-                LogDebug("Operation in progress, ignoring selection");
-                return false;
-            }
-
-            return true;
-        }
-
-        private async Task PerformDeviceSelectionAsync()
-        {
-            DisableControls();
-
-            if (_cameraService.IsCameraRunning)
-            {
-                LogDebug("Stopping camera for device switch");
-                await StopCameraAsync();
-                await Task.Delay(DEVICE_RELEASE_DELAY_MS);
-            }
-
-            await SelectDeviceAsync();
-            await Task.Delay(200);
-            EnableControls();
-        }
-
-        private async Task SelectDeviceAsync()
-        {
-            var deviceName = DeviceComboBox.SelectedItem.ToString();
-            if (string.IsNullOrEmpty(deviceName))
-            {
-                return;
-            }
-
-            LogDebug($"Selecting device: {deviceName}");
-            var result = await _cameraService.SelectDeviceAsync(deviceName);
-
-            if (result)
-            {
-                LogDebug($"Device selected: {deviceName}");
-                UpdateLastAction();
-                UpdateCameraStatus();
-            }
-            else
-            {
-                LastActionText.Text = $"Failed to select: {deviceName}";
+                // User selected another device - this operation cancelled
             }
         }
 
         private async void StartStopButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!CanExecuteOperation())
+            try
             {
-                return;
+                await ExecuteCameraOperationAsync(async ct =>
+                {
+                    if (_cameraService.IsCameraRunning)
+                    {
+                        await StopCameraAsync(ct);
+                    }
+                    else
+                    {
+                        await StartCameraAsync(ct);
+                    }
+                    
+                    UpdateCameraStatus();
+                    UpdateLastAction();
+                    
+                }, "Toggle Camera");
             }
-
-            await ExecuteWithLock("Camera Toggle", async () =>
+            catch (OperationCanceledException)
             {
-                await ToggleCameraAsync();
-            });
-        }
-
-        private async Task ToggleCameraAsync()
-        {
-            StartStopButton.IsEnabled = false;
-
-            if (_cameraService.IsCameraRunning)
-            {
-                await StopCameraAsync();
+                // User clicked again - old operation cancelled, new one starting
             }
-            else
-            {
-                await StartCameraAsync();
-            }
-
-            UpdateLastAction();
-            UpdateCameraStatus();
-
-            StartStopButton.IsEnabled = true;
         }
 
         private async void RefreshDevicesButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_isOperationInProgress || _isLoadingDevices)
+            try
             {
-                LogDebug("Operation in progress, ignoring refresh");
-                return;
+                await ExecuteCameraOperationAsync(async ct =>
+                {
+                    LastActionText.Text = "Refreshing devices...";
+                    
+                    // Stop camera if running
+                    if (_cameraService.IsCameraRunning)
+                    {
+                        await StopCameraAsync(ct);
+                    }
+                    
+                    ClearCameraPreview();
+                    
+                }, "Stop Camera Before Refresh");
+                
+                // Load devices OUTSIDE the cancellable operation
+                // This prevents device selection from being interrupted
+                await LoadAvailableDevicesAsync();
+                
+                // Auto-select and initialize first device (but don't start)
+                if (DeviceComboBox.Items.Count > 0 && DeviceComboBox.SelectedItem != null)
+                {
+                    var deviceName = DeviceComboBox.SelectedItem.ToString()!;
+                    await _cameraService.SelectDeviceAsync(deviceName);
+                    LogDebug($"Device re-initialized after refresh: {deviceName}");
+                }
+                
+                LastActionText.Text = "Devices refreshed";
             }
-
-            await SafeExecuteAsync("Refresh Devices", async () =>
-            {
-                await PerformDeviceRefreshAsync();
-            });
-        }
-
-        private async Task PerformDeviceRefreshAsync()
-        {
-            LastActionText.Text = "Refreshing device list...";
-            DisableAllControls();
-
-            if (_cameraService.IsCameraRunning)
-            {
-                await StopCameraAsync();
-                await Task.Delay(DEVICE_RELEASE_DELAY_MS); // Wait for device release
-            }
-
-            ClearCameraPreview();
-            await Task.Delay(200);
-            
-            await LoadAvailableDevicesAsync();
-            LastActionText.Text = "Device list refreshed";
-
-            EnableAllControls();
+            catch (OperationCanceledException) { }
         }
 
         #endregion
@@ -517,7 +405,6 @@ namespace LaptopHealth.Views
             DeviceComboBox.SelectedItem = null;
             NoDevicesMessage.Visibility = Visibility.Visible;
             CameraStatusText.Text = "No Devices Available";
-            LogDebug("No camera devices found");
         }
 
         private void ShowDevicesAvailableState(List<string> devices)
@@ -530,12 +417,7 @@ namespace LaptopHealth.Views
                 DeviceComboBox.Items.Add(device);
             }
 
-            if (DeviceComboBox.Items.Count > 0)
-            {
-                DeviceComboBox.SelectedIndex = 0;
-            }
-
-            LogDebug($"Loaded {devices.Count} camera devices");
+            LogDebug($"Found {devices.Count} device(s)");
         }
 
         private void UpdateUIForRunningCamera()
@@ -583,84 +465,72 @@ namespace LaptopHealth.Views
             }
         }
 
-        private void DisableControls()
-        {
-            DeviceComboBox.IsEnabled = false;
-            StartStopButton.IsEnabled = false;
-        }
-
-        private void EnableControls()
-        {
-            DeviceComboBox.IsEnabled = true;
-            StartStopButton.IsEnabled = true;
-        }
-
-        private void DisableAllControls()
-        {
-            RefreshDevicesButton.IsEnabled = false;
-            StartStopButton.IsEnabled = false;
-            DeviceComboBox.IsEnabled = false;
-        }
-
-        private void EnableAllControls()
-        {
-            RefreshDevicesButton.IsEnabled = true;
-            StartStopButton.IsEnabled = true;
-            DeviceComboBox.IsEnabled = DeviceComboBox.Items.Count > 0;
-        }
-
         #endregion
 
         #region Helper Methods
 
-        private async Task SafeExecuteAsync(string operationName, Func<Task> operation)
+        /// <summary>
+        /// Ensures only one camera operation executes at a time.
+        /// Automatically cancels previous operation if new one is requested.
+        /// </summary>
+        private async Task<T> ExecuteCameraOperationAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            string operationName)
         {
+            // Disable UI
+            StartStopButton.IsEnabled = false;
+            DeviceComboBox.IsEnabled = false;
+            RefreshDevicesButton.IsEnabled = false;
+            
+            // Cancel any in-progress operation
+            _currentOperationCts?.Cancel();
+            
+            // Wait for previous operation to finish
+            await _uiOperationLock.WaitAsync();
+            
             try
             {
-                await operation();
+                _currentOperationCts?.Dispose();
+                _currentOperationCts = new CancellationTokenSource();
+                
+                LogDebug($"Starting: {operationName}");
+                
+                var result = await operation(_currentOperationCts.Token);
+                
+                LogDebug($"Completed: {operationName}");
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                LogDebug($"Cancelled: {operationName}");
+                throw;
             }
             catch (Exception ex)
             {
                 LogError(operationName, ex);
-                LastActionText.Text = $"Error in {operationName}: {ex.Message}";
-            }
-        }
-
-        private async Task ExecuteWithLock(string operationName, Func<Task> operation)
-        {
-            try
-            {
-                _isOperationInProgress = true;
-                _lastOperationTime = DateTime.UtcNow;
-                await operation();
-            }
-            catch (Exception ex)
-            {
-                LogError(operationName, ex);
-                LastActionText.Text = $"Error: {ex.Message}";
+                throw;
             }
             finally
             {
-                _isOperationInProgress = false;
+                _uiOperationLock.Release();
+                
+                // Re-enable UI
+                StartStopButton.IsEnabled = true;
+                DeviceComboBox.IsEnabled = DeviceComboBox.Items.Count > 0;
+                RefreshDevicesButton.IsEnabled = true;
             }
         }
-
-        private bool CanExecuteOperation()
+        
+        // Overload for void operations
+        private async Task ExecuteCameraOperationAsync(
+            Func<CancellationToken, Task> operation,
+            string operationName)
         {
-            if (_isOperationInProgress)
+            await ExecuteCameraOperationAsync(async ct =>
             {
-                LogDebug("Operation in progress, ignoring");
-                return false;
-            }
-
-            var timeSinceLastOperation = (DateTime.UtcNow - _lastOperationTime).TotalMilliseconds;
-            if (timeSinceLastOperation < OPERATION_COOLDOWN_MS)
-            {
-                LogDebug($"Click too fast ({timeSinceLastOperation:F0}ms), ignoring");
-                return false;
-            }
-
-            return true;
+                await operation(ct);
+                return true;
+            }, operationName);
         }
 
         private static void LogDebug(string message)
@@ -670,7 +540,7 @@ namespace LaptopHealth.Views
 
         private static void LogError(string operation, Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[CameraTestPage] Error in {operation}: {ex.GetType().Name}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[CameraTestPage] Error in {operation}: {ex.Message}");
         }
 
         #endregion

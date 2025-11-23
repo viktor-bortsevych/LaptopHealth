@@ -52,5 +52,11 @@ namespace LaptopHealth.Services.Interfaces
         /// Gets the last action performed
         /// </summary>
         string LastAction { get; }
+
+        /// <summary>
+        /// Sets the application-wide cancellation token for graceful shutdown support
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token to use for operations</param>
+        void SetCancellationToken(CancellationToken cancellationToken);
     }
 }

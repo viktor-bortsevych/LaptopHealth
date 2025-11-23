@@ -11,20 +11,22 @@ namespace LaptopHealth.Services.Interfaces
         /// Gets a list of available camera devices
         /// </summary>
         /// <returns>List of camera device names</returns>
-        Task<IEnumerable<string>> GetAvailableDevicesAsync();
+        Task<IEnumerable<string>> GetAvailableDevicesAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Initializes a specific camera device
         /// </summary>
         /// <param name="deviceName">Name of the camera device</param>
+        /// <param name="cancellationToken">Token to cancel the operation</param>
         /// <returns>True if initialization was successful</returns>
-        Task<bool> InitializeDeviceAsync(string deviceName);
+        Task<bool> InitializeDeviceAsync(string deviceName, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Starts capturing video from the initialized camera
         /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation</param>
         /// <returns>True if camera started successfully</returns>
-        Task<bool> StartCaptureAsync();
+        Task<bool> StartCaptureAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Stops capturing video from the camera
@@ -35,8 +37,9 @@ namespace LaptopHealth.Services.Interfaces
         /// <summary>
         /// Gets the current frame from the camera
         /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation</param>
         /// <returns>Byte array representing the current frame (e.g., bitmap data)</returns>
-        Task<byte[]?> GetCurrentFrameAsync();
+        Task<byte[]?> GetCurrentFrameAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Releases camera resources

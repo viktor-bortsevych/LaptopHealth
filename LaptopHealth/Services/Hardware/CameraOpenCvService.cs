@@ -1,24 +1,27 @@
 ﻿using LaptopHealth.Services.Interfaces;
 using OpenCvSharp;
-using System.Diagnostics;
+using System.Management;
+using IApplicationLogger = LaptopHealth.Services.Interfaces.ILogger;
 
 namespace LaptopHealth.Services.Hardware
 {
-    public class CameraOpenCvService : ICameraHardwareService, IDisposable
+    public class CameraOpenCvService(IApplicationLogger logger) : ICameraHardwareService, IDisposable
     {
         #region Fields & Constants
 
         private VideoCapture? _capture;
         private bool _isCapturing;
-        private string? _currentDevice;
         private Mat? _currentFrame;
-        private readonly Lock _lockObject = new();
+        private readonly Lock _frameAccessLock = new(); // Only for frame operations
         private bool _disposed = false;
+        private readonly Dictionary<int, string> _deviceNameCache = [];
+
+        // Sequential operation execution
+        private readonly SemaphoreSlim _operationSemaphore = new(1, 1);
+        private CancellationTokenSource? _currentOperationCts;
 
         private const int MAX_DEVICE_INDEX = 20;
         private const int STANDARD_DEVICE_INDEX = 5;
-        private const int RESOURCE_DELAY_MS = 100;
-        private const int STOP_DELAY_MS = 50;
 
         public bool IsCapturing => _isCapturing;
 
@@ -26,13 +29,18 @@ namespace LaptopHealth.Services.Hardware
 
         #region Public API
 
-        public Task<IEnumerable<string>> GetAvailableDevicesAsync()
+        public Task<IEnumerable<string>> GetAvailableDevicesAsync(CancellationToken cancellationToken = default)
         {
             return Task.Run(() =>
             {
                 try
                 {
-                    PrintEnumerationHeader();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    logger.Section("CAMERA DEVICE ENUMERATION STARTED");
+                    PrintEnumerationInfo();
+
+                    // Pre-populate device name cache with real Windows device names
+                    PopulateDeviceNameCache();
 
                     var devices = DetectDevicesWithBackends();
 
@@ -41,176 +49,208 @@ namespace LaptopHealth.Services.Hardware
                         devices = DetectDevicesExtended();
                     }
 
-                    PrintEnumerationFooter(devices);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    PrintEnumerationResult(devices);
+                    logger.SectionEnd();
 
                     return (IEnumerable<string>)devices;
                 }
-                catch (Exception ex)
+                catch (OperationCanceledException)
                 {
-                    LogError("Device enumeration", ex);
+                    // Silently handle cancellation - this is expected behavior
                     return [];
                 }
-            });
-        }
-
-        public Task<bool> InitializeDeviceAsync(string deviceName)
-        {
-            return Task.Run(() =>
-            {
-                try
-                {
-                    lock (_lockObject)
-                    {
-                        Log($"Initializing device: {deviceName}");
-
-                        PrepareForInitialization();
-
-                        int deviceIndex = ExtractDeviceIndex(deviceName);
-                        _capture = CreateVideoCapture(deviceIndex);
-
-                        if (!ValidateCapture(_capture))
-                        {
-                            CleanupAfterFailedInitialization();
-                            return false;
-                        }
-
-                        _currentDevice = deviceName;
-                        
-                        // Give the camera time to settle after initialization
-                        Thread.Sleep(100);
-                        
-                        LogDeviceInfo(_capture, deviceName);
-                        return true;
-                    }
-                }
                 catch (Exception ex)
                 {
-                    LogError($"Initialize device: {deviceName}", ex);
-                    CleanupAfterFailedInitialization();
-                    return false;
+                    logger.Error("Device enumeration", ex);
+                    return [];
                 }
-            });
+            }, cancellationToken);
         }
 
-        public Task<bool> StartCaptureAsync()
+        public Task<bool> InitializeDeviceAsync(string deviceName, CancellationToken cancellationToken = default)
         {
-            return Task.Run(() =>
+            return ExecuteSequentiallyAsync(async (opCt) =>
             {
                 try
                 {
-                    lock (_lockObject)
+                    // Stop any current capture first
+                    await StopCaptureInternalAsync(opCt);
+
+                    _isCapturing = false;
+                    CleanupCapture();
+
+                    int deviceIndex = ExtractDeviceIndex(deviceName);
+                    _capture = CreateVideoCapture(deviceIndex);
+
+                    if (!ValidateCapture(_capture))
                     {
-                        ValidateCaptureReady();
-
-                        if (_isCapturing)
-                        {
-                            Log("ℹ Already capturing");
-                            return true;
-                        }
-
-                        _isCapturing = true;
-                        Log($"✓ Starting capture on {_currentDevice}");
-                        
-                        // Warm up the camera by trying to read initial frames
-                        WarmupCapture();
-                        
-                        return true;
+                        CleanupCapture();
+                        return false;
                     }
+
+                    LogDeviceInfo(_capture, deviceName);
+                    return true;
                 }
-                catch (InvalidOperationException ex)
+                catch (OperationCanceledException)
                 {
-                    Log($"✗ {ex.Message}");
+                    CleanupCapture();
                     return false;
                 }
                 catch (Exception ex)
                 {
-                    LogError("Start capture", ex);
+                    logger.Error($"Initialize device: {deviceName}", ex);
+                    CleanupCapture();
                     return false;
                 }
-            });
+            }, cancellationToken);
         }
 
-        private void WarmupCapture()
+        public Task<bool> StartCaptureAsync(CancellationToken cancellationToken = default)
+        {
+            logger.Info($"[StartCaptureAsync] Called with cancellation token: {cancellationToken.GetHashCode()}");
+            
+            return ExecuteSequentiallyAsync(async (opCt) =>
+            {
+                logger.Info($"[StartCaptureAsync] Inside ExecuteSequentiallyAsync, opCt: {opCt.GetHashCode()}");
+                
+                try
+                {
+                    if (_capture == null || !_capture.IsOpened())
+                    {
+                        logger.Error("Cannot start: device not initialized");
+                        return false;
+                    }
+
+                    if (_isCapturing)
+                    {
+                        logger.Info("Camera already capturing");
+                        return true;
+                    }
+
+                    logger.Info("Setting _isCapturing = true");
+                    _isCapturing = true;
+
+                    // Warm up the camera - use CancellationToken.None to ensure it completes
+                    // This is critical - warmup MUST complete for frames to be available
+                    logger.Info("About to call WarmupCaptureAsync...");
+                    await WarmupCaptureAsync(CancellationToken.None);
+                    logger.Info("WarmupCaptureAsync completed");
+
+                    logger.Info("Camera capture started successfully");
+                    return true;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    _isCapturing = false;
+                    logger.Warn($"Camera start was cancelled: {ex.Message}");
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    logger.Error("Start capture", ex);
+                    _isCapturing = false;
+                    return false;
+                }
+            }, cancellationToken);
+        }
+
+        private async Task WarmupCaptureAsync(CancellationToken cancellationToken)
         {
             try
             {
+                logger.Info("Starting camera warmup...");
                 var warmupMat = new Mat();
                 int successfulReads = 0;
-                
-                for (int i = 0; i < 10; i++)
+                int totalAttempts = 0;
+
+                for (int i = 0; i < 15 && successfulReads < 3; i++)
                 {
+                    totalAttempts++;
+
                     if (_capture!.Read(warmupMat) && !warmupMat.Empty())
                     {
                         successfulReads++;
-                        Log($"Warmup: Frame {successfulReads} read successfully");
-                        
-                        if (successfulReads >= 2)
-                        {
-                            break;
-                        }
+                        logger.Debug($"Warmup frame {successfulReads}/3 captured");
                     }
-                    else
-                    {
-                        Log($"Warmup: Frame {i + 1} failed, retrying...");
-                    }
-                    
-                    Thread.Sleep(20);
+
+                    // Use async delay
+                    await Task.Delay(30, cancellationToken);
                 }
-                
+
+                warmupMat.Dispose();
+
                 if (successfulReads == 0)
                 {
-                    Log("⚠ Warmup failed: Could not read any frames");
+                    logger.Warn($"Camera warmup failed: Could not read frames after {totalAttempts} attempts");
                 }
-                
-                warmupMat.Dispose();
+                else
+                {
+                    logger.Info($"Camera warmup successful: {successfulReads} frames in {totalAttempts} attempts");
+                }
             }
             catch (Exception ex)
             {
-                Log($"Warmup warning: {ex.GetType().Name} - {ex.Message}");
+                logger.Warn($"Camera warmup warning: {ex.GetType().Name} - {ex.Message}");
             }
         }
 
         public Task<bool> StopCaptureAsync()
         {
+            return ExecuteSequentiallyAsync(async (opCt) =>
+            {
+                return await StopCaptureInternalAsync(opCt);
+            });
+        }
+
+        private Task<bool> StopCaptureInternalAsync(CancellationToken cancellationToken)
+        {
             return Task.Run(() =>
             {
                 try
                 {
-                    lock (_lockObject)
+                    if (!_isCapturing)
                     {
-                        if (!_isCapturing)
-                        {
-                            Log("ℹ Already stopped");
-                            return true;
-                        }
-
-                        _isCapturing = false;
-                        Log("✓ Stopping capture");
-
-                        DisposeFrame(); // Only clear the current frame
-                        
-                        Thread.Sleep(STOP_DELAY_MS);
                         return true;
                     }
+
+                    _isCapturing = false;
+
+                    DisposeFrame();
+                    return true;
                 }
                 catch (Exception ex)
                 {
-                    LogError("Stop capture", ex);
+                    logger.Error("Stop capture", ex);
                     return false;
                 }
-            });
+            }, cancellationToken);
         }
 
-        public Task<byte[]?> GetCurrentFrameAsync()
+        public Task<byte[]?> GetCurrentFrameAsync(CancellationToken cancellationToken = default)
         {
             return Task.Run<byte[]?>(() =>
             {
                 try
                 {
-                    lock (_lockObject)
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    lock (_frameAccessLock)
                     {
                         if (!CanCaptureFrame())
                         {
+                            if (_capture == null)
+                            {
+                                logger.Debug("GetCurrentFrameAsync: capture is null");
+                            }
+                            else if (!_isCapturing)
+                            {
+                                logger.Debug("GetCurrentFrameAsync: not capturing");
+                            }
+                            else if (!_capture.IsOpened())
+                            {
+                                logger.Debug("GetCurrentFrameAsync: capture not opened");
+                            }
                             return null;
                         }
 
@@ -218,18 +258,26 @@ namespace LaptopHealth.Services.Hardware
 
                         if (!ReadFrameFromCapture())
                         {
+                            logger.Debug("GetCurrentFrameAsync: failed to read frame from capture");
                             return null;
                         }
 
-                        return EncodeFrameToBytes();
+                        var bytes = EncodeFrameToBytes();
+                        logger.Debug($"GetCurrentFrameAsync: successfully encoded frame ({bytes.Length} bytes)");
+                        return bytes;
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Silently handle cancellation - this is expected behavior
+                    return null;
                 }
                 catch (Exception ex)
                 {
-                    LogError("Get frame", ex);
+                    logger.Error("Get frame", ex);
                     return null;
                 }
-            });
+            }, cancellationToken);
         }
 
         public Task DisposeAsync()
@@ -249,13 +297,13 @@ namespace LaptopHealth.Services.Hardware
 
             if (disposing)
             {
-                lock (_lockObject)
-                {
-                    _isCapturing = false;
-                    _currentDevice = null;
-                    ReleaseAllResources();
-                    Log("✓ Disposed camera resources\n");
-                }
+                _isCapturing = false;
+                ReleaseAllResources();
+                _deviceNameCache.Clear();
+                _operationSemaphore?.Dispose();
+                _currentOperationCts?.Dispose();
+                _currentOperationCts = null;
+                logger.Info("Disposed camera resources");
             }
 
             _disposed = true;
@@ -263,9 +311,116 @@ namespace LaptopHealth.Services.Hardware
 
         #endregion
 
+        #region Sequential Operation Execution
+
+        /// <summary>
+        /// Executes an operation sequentially, ensuring only one operation runs at a time.
+        /// Cancels any previous operation and waits for the semaphore to be available.
+        /// </summary>
+        private async Task<T> ExecuteSequentiallyAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            CancellationToken userCancellationToken = default)
+        {
+            logger.Debug($"[ExecuteSequentiallyAsync] Entering, userCt: {userCancellationToken.GetHashCode()}");
+            
+            // Cancel and DISPOSE previous operation token source
+            if (_currentOperationCts != null)
+            {
+                logger.Debug("[ExecuteSequentiallyAsync] Cancelling previous operation");
+                await _currentOperationCts.CancelAsync();
+                _currentOperationCts.Dispose();
+                _currentOperationCts = null;
+            }
+            
+            _currentOperationCts = CancellationTokenSource.CreateLinkedTokenSource(userCancellationToken);
+            logger.Debug($"[ExecuteSequentiallyAsync] Created linked token: {_currentOperationCts.Token.GetHashCode()}");
+
+            logger.Debug("[ExecuteSequentiallyAsync] Waiting for semaphore...");
+            await _operationSemaphore.WaitAsync(userCancellationToken);
+            logger.Debug("[ExecuteSequentiallyAsync] Semaphore acquired");
+
+            try
+            {
+                logger.Debug("[ExecuteSequentiallyAsync] Executing operation...");
+                var result = await operation(_currentOperationCts.Token);
+                logger.Debug($"[ExecuteSequentiallyAsync] Operation completed with result: {result}");
+                return result;
+            }
+            catch (OperationCanceledException ex)
+            {
+                logger.Warn($"[ExecuteSequentiallyAsync] Operation was cancelled: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                logger.Debug("[ExecuteSequentiallyAsync] Releasing semaphore");
+                _operationSemaphore.Release();
+                
+                // Clean up operation token source after operation completes
+                _currentOperationCts?.Dispose();
+                _currentOperationCts = null;
+            }
+        }
+
+        #endregion
+
         #region Device Detection
 
-        private static List<string> DetectDevicesWithBackends()
+        /// <summary>
+        /// Populates the device name cache with actual Windows camera device names via WMI
+        /// </summary>
+        private void PopulateDeviceNameCache()
+        {
+            try
+            {
+                var deviceNames = GetWindowsCameraDeviceNames();
+                if (deviceNames.Count > 0)
+                {
+                    logger.Info($"Found {deviceNames.Count} camera device names via WMI");
+                    for (int i = 0; i < deviceNames.Count; i++)
+                    {
+                        _deviceNameCache[i] = deviceNames[i];
+                        logger.Debug($"Cached device {i}: {deviceNames[i]}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Debug($"Failed to populate device name cache via WMI: {ex.GetType().Name}");
+            }
+        }
+
+        /// <summary>
+        /// Queries Windows for actual camera device names using WMI
+        /// </summary>
+        private List<string> GetWindowsCameraDeviceNames()
+        {
+            var deviceNames = new List<string>();
+
+            try
+            {
+                using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_PnPEntity WHERE Name LIKE '%camera%' OR Name LIKE '%webcam%'");
+                var collection = searcher.Get();
+
+                foreach (ManagementObject device in collection.Cast<ManagementObject>())
+                {
+                    var name = device["Name"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        deviceNames.Add(name);
+                        logger.Debug($"WMI discovered: {name}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Debug($"WMI query error: {ex.GetType().Name} - {ex.Message}");
+            }
+
+            return deviceNames;
+        }
+
+        private List<string> DetectDevicesWithBackends()
         {
             var devices = new List<string>();
             var backends = new[] { "Default (Auto)", "DSHOW", "WinRT", "FFMPEG" };
@@ -283,10 +438,10 @@ namespace LaptopHealth.Services.Hardware
             return devices;
         }
 
-        private static List<string> TryDetectWithBackend(string backendName)
+        private List<string> TryDetectWithBackend(string backendName)
         {
             var devices = new List<string>();
-            Log($"Trying backend: {backendName}");
+            logger.Info($"Trying backend: {backendName}");
 
             for (int i = 0; i < STANDARD_DEVICE_INDEX; i++)
             {
@@ -300,7 +455,7 @@ namespace LaptopHealth.Services.Hardware
             return devices;
         }
 
-        private static string? TryDetectDeviceAtIndex(int index)
+        private string? TryDetectDeviceAtIndex(int index)
         {
             try
             {
@@ -315,7 +470,7 @@ namespace LaptopHealth.Services.Hardware
 
                 if (width > 0 && height > 0)
                 {
-                    Log($"  ✓ Index {index}: {width}x{height}");
+                    logger.Info($"Index {index}: {width}x{height}");
                     return GetDeviceName(index);
                 }
 
@@ -327,11 +482,11 @@ namespace LaptopHealth.Services.Hardware
             }
         }
 
-        private static List<string> DetectDevicesExtended()
+        private List<string> DetectDevicesExtended()
         {
             var devices = new List<string>();
-            Log("\nNo devices found with standard detection.");
-            Log("Attempting extended index enumeration (0-20)...\n");
+            logger.Info("No devices found with standard detection.");
+            logger.Info("Attempting extended index enumeration (0-20)...\n");
 
             for (int i = 0; i < MAX_DEVICE_INDEX; i++)
             {
@@ -345,12 +500,12 @@ namespace LaptopHealth.Services.Hardware
             return devices;
         }
 
-        private static string? TryDetectDeviceExtended(int index)
+        private string? TryDetectDeviceExtended(int index)
         {
             try
             {
                 using var testCapture = new VideoCapture(index);
-                Log($"[{index,2}] Testing... IsOpened={testCapture.IsOpened()}");
+                logger.Debug($"[{index,2}] Testing... IsOpened={testCapture.IsOpened()}");
 
                 if (!testCapture.IsOpened())
                 {
@@ -361,13 +516,13 @@ namespace LaptopHealth.Services.Hardware
                 var fps = testCapture.Get(VideoCaptureProperties.Fps);
                 var backend = testCapture.Get(VideoCaptureProperties.Backend);
 
-                Log($"[{index,2}] ✓ FOUND! Resolution: {width}x{height}, FPS: {fps}, Backend: {backend}");
+                logger.Info($"[{index,2}] FOUND! Resolution: {width}x{height}, FPS: {fps}, Backend: {backend}");
 
                 return (width > 0 && height > 0) ? GetDeviceName(index) : null;
             }
             catch (Exception ex)
             {
-                Log($"[{index,2}] Exception: {ex.GetType().Name}");
+                logger.Debug($"[{index,2}] Exception: {ex.GetType().Name}");
                 return null;
             }
         }
@@ -375,13 +530,6 @@ namespace LaptopHealth.Services.Hardware
         #endregion
 
         #region Initialization Helpers
-
-        private void PrepareForInitialization()
-        {
-            _isCapturing = false;
-            ReleaseAllResources();
-            Thread.Sleep(RESOURCE_DELAY_MS);
-        }
 
         private static VideoCapture CreateVideoCapture(int deviceIndex)
         {
@@ -391,23 +539,6 @@ namespace LaptopHealth.Services.Hardware
         private static bool ValidateCapture(VideoCapture capture)
         {
             return capture.IsOpened();
-        }
-
-        private void CleanupAfterFailedInitialization()
-        {
-            lock (_lockObject)
-            {
-                CleanupCapture();
-                _currentDevice = null;
-            }
-        }
-
-        private void ValidateCaptureReady()
-        {
-            if (_capture == null || !_capture.IsOpened())
-            {
-                throw new InvalidOperationException("Cannot start capture: device not initialized");
-            }
         }
 
         #endregion
@@ -470,7 +601,7 @@ namespace LaptopHealth.Services.Hardware
             }
         }
 
-        private static void TryReleaseCapture(VideoCapture capture)
+        private void TryReleaseCapture(VideoCapture capture)
         {
             try
             {
@@ -478,11 +609,11 @@ namespace LaptopHealth.Services.Hardware
             }
             catch (Exception ex)
             {
-                Log($"Warning releasing capture: {ex.GetType().Name}");
+                logger.Warn($"Warning releasing capture: {ex.GetType().Name}");
             }
         }
 
-        private static void TryDispose(IDisposable resource, string resourceName)
+        private void TryDispose(IDisposable resource, string resourceName)
         {
             try
             {
@@ -490,7 +621,7 @@ namespace LaptopHealth.Services.Hardware
             }
             catch (Exception ex)
             {
-                Log($"Warning disposing {resourceName}: {ex.GetType().Name}");
+                logger.Warn($"Warning disposing {resourceName}: {ex.GetType().Name}");
             }
         }
 
@@ -503,7 +634,19 @@ namespace LaptopHealth.Services.Hardware
             return int.TryParse(deviceName.Split(' ').LastOrDefault(), out int index) ? index : 0;
         }
 
-        private static string GetDeviceName(int index) => $"Camera {index}";
+        /// <summary>
+        /// Gets the device name for a given index. First checks the cache for real Windows device names,
+        /// then falls back to a generic name if not found.
+        /// </summary>
+        private string GetDeviceName(int index)
+        {
+            if (_deviceNameCache.TryGetValue(index, out var cachedName))
+            {
+                return $"{cachedName} [{index}]";
+            }
+
+            return $"Camera {index}";
+        }
 
         private static (double width, double height) GetResolution(VideoCapture capture)
         {
@@ -515,79 +658,40 @@ namespace LaptopHealth.Services.Hardware
 
         #endregion
 
-        #region Logging
+        #region Logging Helpers
 
-        private static void Log(string message)
+        private void PrintEnumerationInfo()
         {
-            Debug.WriteLine($"[CameraOpenCvService] {message}");
+            logger.Info($"Environment: {Environment.OSVersion}");
+            logger.Info($".NET Version: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+            logger.Info("OpenCV Backend: Checking available...");
         }
 
-        private static void LogError(string operation, Exception ex)
+        private void PrintEnumerationResult(List<string> devices)
         {
-            Debug.WriteLine($"[CameraOpenCvService] ✗ Error {operation}: {ex.GetType().Name} - {ex.Message}");
-        }
-
-        private static void LogDeviceInfo(VideoCapture capture, string deviceName)
-        {
-            var (width, height) = GetResolution(capture);
-            var fps = capture.Get(VideoCaptureProperties.Fps);
-
-            Log($"✓ Successfully initialized device: {deviceName}");
-            Log($"  Resolution: {width}x{height}");
-            Log($"  FPS: {fps}\n");
-        }
-
-        private static void PrintEnumerationHeader()
-        {
-            Debug.WriteLine("\n" + new string('=', 70));
-            Debug.WriteLine("[CameraOpenCvService] CAMERA DEVICE ENUMERATION STARTED");
-            Debug.WriteLine(new string('=', 70));
-            Debug.WriteLine($"[CameraOpenCvService] Environment: {Environment.OSVersion}");
-            Debug.WriteLine($"[CameraOpenCvService] .NET Version: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
-            Debug.WriteLine($"[CameraOpenCvService] OpenCV Backend: Checking available...\n");
-        }
-
-        private static void PrintEnumerationFooter(List<string> devices)
-        {
-            Debug.WriteLine("\n" + new string('-', 70));
-            Debug.WriteLine($"[CameraOpenCvService] ENUMERATION COMPLETE: Found {devices.Count} device(s)");
-            Debug.WriteLine(new string('=', 70) + "\n");
+            logger.Info($"ENUMERATION COMPLETE: Found {devices.Count} device(s)");
 
             if (devices.Count == 0)
             {
-                PrintTroubleshootingInfo();
+                logger.Troubleshoot("NO CAMERA DEVICES DETECTED");
             }
             else
             {
                 foreach (var device in devices)
                 {
-                    Log($"✓ Available: {device}");
+                    logger.Info($"Available: {device}");
                 }
             }
         }
 
-        private static void PrintTroubleshootingInfo()
+        private void LogDeviceInfo(VideoCapture capture, string deviceName)
         {
-            Debug.WriteLine("\n" + new string('!', 70));
-            Debug.WriteLine("[CameraOpenCvService] ⚠ NO CAMERA DEVICES DETECTED");
-            Debug.WriteLine(new string('!', 70));
-            Debug.WriteLine("\nTROUBLESHOOTING STEPS:");
-            Debug.WriteLine("\n1. VERIFY CAMERA HARDWARE:");
-            Debug.WriteLine("   - Check physical connection and USB port");
-            Debug.WriteLine("   - Verify camera indicator light is on");
-            Debug.WriteLine("\n2. CHECK WINDOWS DEVICE MANAGER:");
-            Debug.WriteLine("   - Win + X → Device Manager → Cameras");
-            Debug.WriteLine("   - Right-click camera → Properties");
-            Debug.WriteLine("   - Update driver if needed");
-            Debug.WriteLine("\n3. CLOSE BLOCKING APPLICATIONS:");
-            Debug.WriteLine("   - Zoom, Teams, Skype, Discord, OBS");
-            Debug.WriteLine("   - Browser tabs using webcam");
-            Debug.WriteLine("\n4. CHECK WINDOWS CAMERA PRIVACY:");
-            Debug.WriteLine("   - Settings → Privacy → Camera");
-            Debug.WriteLine("   - Enable camera access for this app");
-            Debug.WriteLine("\n5. TEST WITH WINDOWS CAMERA APP:");
-            Debug.WriteLine("   - If Camera app fails → system-level issue");
-            Debug.WriteLine(new string('!', 70) + "\n");
+            var (width, height) = GetResolution(capture);
+            var fps = capture.Get(VideoCaptureProperties.Fps);
+
+            logger.Info($"Successfully initialized device: {deviceName}");
+            logger.Info($"  Resolution: {width}x{height}");
+            logger.Info($"  FPS: {fps}");
         }
 
         #endregion
