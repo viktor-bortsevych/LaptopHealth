@@ -1,4 +1,4 @@
-﻿<Window x:Class="LaptopHealth.Views.MainWindow"
+<Window x:Class="LaptopHealth.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,11 +6,12 @@
         xmlns:local="clr-namespace:LaptopHealth.Views"
         mc:Ignorable="d"
         Title="LaptopHealth" Height="600" Width="900"
-        Background="{StaticResource SurfaceBrush}"
+        Background="{StaticResource WhiteBrush}"
         Icon="pack://application:,,,/Resources/Images/app.ico">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Fonts.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/Colors.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/ButtonStyles.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/CommonStyles.xaml"/>
@@ -18,72 +19,99 @@
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         </ResourceDictionary>
     </Window.Resources>
-    
+
     <Grid>
         <Grid.RowDefinitions>
-            <!-- Top Section: Progress Menu with Navigation -->
             <RowDefinition Height="40"/>
-            <!-- Main Content Area - Test Page -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- Top Section (Progress + Navigation) -->
-        <Border Grid.Row="0" Background="{StaticResource BackgroundBrush}" BorderBrush="{StaticResource SurfaceBrush}" BorderThickness="0,0,0,2">
+        <Border Grid.Row="0" Background="{StaticResource WhiteBrush}" BorderBrush="{StaticResource PrimaryBrush}" BorderThickness="0,0,0,2">
             <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
-                    <!-- Left Navigation Button -->
                     <ColumnDefinition Width="44"/>
-                    <!-- Progress Indicators -->
                     <ColumnDefinition Width="*"/>
-                    <!-- Right Navigation Button -->
                     <ColumnDefinition Width="44"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Previous Button (Left) -->
+                <!-- Previous Button -->
                 <Button Grid.Column="0"
-                        x:Name="PreviousButton"
-                        Content="◀"
+                        Content="&#xE72B;"
                         Width="28"
                         Height="28"
                         FontSize="16"
                         FontWeight="Normal"
-                        FontFamily="{StaticResource DongleFontFamily}"
+                        FontFamily="{StaticResource IconFontFamily}"
                         Style="{StaticResource OutlineButtonStyle}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="8,2,0,2"
-                        Padding="0,2,0,0"
-                        Click="PreviousButton_Click"
-                        Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        Padding="0,0,0,0"
+                        Command="{Binding PreviousCommand}"
+                        Visibility="{Binding CanNavigatePrevious, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-                <!-- Progress Menu (Center) -->
+                <!-- Progress Indicators -->
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <!-- Progress Indicators Container -->
-                    <StackPanel x:Name="ProgressIndicatorsPanel" Orientation="Horizontal" HorizontalAlignment="Center"/>
+                    <ItemsControl ItemsSource="{Binding ProgressIndicators}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button ToolTip="{Binding TestName}"
+                                        Background="{Binding Background}"
+                                        Command="{Binding NavigateCommand}"
+                                        CommandParameter="{Binding TestIndex}"
+                                        Style="{StaticResource ProgressIndicatorButtonStyle}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
 
-                <!-- Next Button (Right) -->
+                <!-- Next Button -->
                 <Button Grid.Column="2"
-                        x:Name="NextButton"
-                        Content="▶"
+                        Content="&#xE72A;"
                         Width="28"
                         Height="28"
                         FontSize="16"
                         FontWeight="Bold"
-                        FontFamily="{StaticResource DongleFontFamily}"
+                        FontFamily="{StaticResource IconFontFamily}"
                         Style="{StaticResource OutlineButtonStyle}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,0,8,0"
-                        Padding="0,2,0,0"
-                        Click="NextButton_Click"
-                        Visibility="{Binding IsEnabled, RelativeSource={RelativeSource Self}, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        Padding="0,0,0,0"
+                        Command="{Binding NextCommand}"
+                        Visibility="{Binding CanNavigateNext, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </Grid>
         </Border>
 
-        <!-- Main Content Area - Dynamic Test Page -->
-        <Border Grid.Row="1" Background="{StaticResource BackgroundBrush}">
-            <ContentControl x:Name="TestContentArea" />
-        </Border>
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1" Background="{StaticResource WhiteBrush}">
+            <!-- Error Message -->
+            <TextBlock Text="{Binding ErrorMessage}"
+                       Foreground="Red"
+                       TextWrapping="Wrap"
+                       Margin="20"
+                       FontSize="14"
+                       Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+            <!-- Test Page Content -->
+            <ContentControl Content="{Binding CurrentTestPage}">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasError}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
+            </ContentControl>
+        </Grid>
     </Grid>
 </Window>
