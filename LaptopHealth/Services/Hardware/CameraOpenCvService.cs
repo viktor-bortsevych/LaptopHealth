@@ -13,6 +13,7 @@ namespace LaptopHealth.Services.Hardware
         private bool _isCapturing;
         private Mat? _currentFrame;
         private readonly Lock _frameAccessLock = new(); // Only for frame operations
+        private readonly Lock _operationCtsLock = new(); // For _currentOperationCts access
         private bool _disposed = false;
         private readonly Dictionary<int, string> _deviceNameCache = [];
 
@@ -318,17 +319,33 @@ namespace LaptopHealth.Services.Hardware
         {
             logger.Debug($"[ExecuteSequentiallyAsync] Entering, userCt: {userCancellationToken.GetHashCode()}");
             
-            // Cancel and DISPOSE previous operation token source
-            if (_currentOperationCts != null)
+            // Cancel previous operation
+            CancellationTokenSource? previousCts = null;
+            lock (_operationCtsLock)
             {
-                logger.Debug("[ExecuteSequentiallyAsync] Cancelling previous operation");
-                await _currentOperationCts.CancelAsync();
-                _currentOperationCts.Dispose();
-                _currentOperationCts = null;
+                if (_currentOperationCts != null)
+                {
+                    logger.Debug("[ExecuteSequentiallyAsync] Cancelling previous operation");
+                    previousCts = _currentOperationCts;
+                }
             }
             
-            _currentOperationCts = CancellationTokenSource.CreateLinkedTokenSource(userCancellationToken);
-            logger.Debug($"[ExecuteSequentiallyAsync] Created linked token: {_currentOperationCts.Token.GetHashCode()}");
+            if (previousCts != null)
+            {
+                await previousCts.CancelAsync();
+                lock (_operationCtsLock)
+                {
+                    previousCts.Dispose();
+                    _currentOperationCts = null;
+                }
+            }
+            
+            CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userCancellationToken);
+            lock (_operationCtsLock)
+            {
+                _currentOperationCts = linkedCts;
+                logger.Debug($"[ExecuteSequentiallyAsync] Created linked token: {linkedCts.Token.GetHashCode()}");
+            }
 
             logger.Debug("[ExecuteSequentiallyAsync] Waiting for semaphore...");
             await _operationSemaphore.WaitAsync(userCancellationToken);
@@ -336,10 +353,13 @@ namespace LaptopHealth.Services.Hardware
 
             try
             {
-                logger.Debug("[ExecuteSequentiallyAsync] Executing operation...");
-                var result = await operation(_currentOperationCts.Token);
-                logger.Debug($"[ExecuteSequentiallyAsync] Operation completed with result: {result}");
-                return result;
+                using (linkedCts)
+                {
+                    logger.Debug("[ExecuteSequentiallyAsync] Executing operation...");
+                    var result = await operation(linkedCts.Token);
+                    logger.Debug($"[ExecuteSequentiallyAsync] Operation completed with result: {result}");
+                    return result;
+                }
             }
             catch (OperationCanceledException ex)
             {
@@ -352,8 +372,10 @@ namespace LaptopHealth.Services.Hardware
                 _operationSemaphore.Release();
                 
                 // Clean up operation token source after operation completes
-                _currentOperationCts?.Dispose();
-                _currentOperationCts = null;
+                lock (_operationCtsLock)
+                {
+                    _currentOperationCts = null;
+                }
             }
         }
 
@@ -397,15 +419,15 @@ namespace LaptopHealth.Services.Hardware
                 using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_PnPEntity WHERE Name LIKE '%camera%' OR Name LIKE '%webcam%'");
                 var collection = searcher.Get();
 
-                foreach (ManagementObject device in collection.Cast<ManagementObject>())
-                {
-                    var name = device["Name"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(name))
+                deviceNames.AddRange(collection
+                    .Cast<ManagementObject>()
+                    .Select(device => device["Name"]?.ToString())
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name =>
                     {
-                        deviceNames.Add(name);
                         logger.Debug($"WMI discovered: {name}");
-                    }
-                }
+                        return name!;
+                    }));
             }
             catch (Exception ex)
             {
@@ -417,20 +439,11 @@ namespace LaptopHealth.Services.Hardware
 
         private List<string> DetectDevicesWithBackends()
         {
-            var devices = new List<string>();
             var backends = new[] { "Default (Auto)", "DSHOW", "WinRT", "FFMPEG" };
 
-            foreach (var backendName in backends)
-            {
-                var detected = TryDetectWithBackend(backendName);
-                if (detected.Count > 0)
-                {
-                    devices.AddRange(detected);
-                    break;
-                }
-            }
-
-            return devices;
+            return backends
+                .Select(backendName => TryDetectWithBackend(backendName))
+                .FirstOrDefault(detected => detected.Count > 0) ?? [];
         }
 
         private List<string> TryDetectWithBackend(string backendName)

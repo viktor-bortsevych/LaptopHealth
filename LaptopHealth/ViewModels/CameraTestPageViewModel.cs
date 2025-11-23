@@ -656,7 +656,10 @@ namespace LaptopHealth.ViewModels
             IsRefreshButtonEnabled = false;
 
             // Cancel any in-progress operation
-            _currentOperationCts?.CancelAsync();
+            if (_currentOperationCts != null)
+            {
+                await _currentOperationCts.CancelAsync();
+            }
 
             // Wait for previous operation to finish
             await _uiOperationLock.WaitAsync();

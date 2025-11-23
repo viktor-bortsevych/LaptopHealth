@@ -19,7 +19,7 @@
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         </ResourceDictionary>
     </Window.Resources>
-    
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="40"/>
@@ -37,17 +37,17 @@
 
                 <!-- Previous Button -->
                 <Button Grid.Column="0"
-                        Content="?"
+                        Content="&#xE72B;"
                         Width="28"
                         Height="28"
                         FontSize="16"
                         FontWeight="Normal"
-                        FontFamily="{StaticResource DongleFontFamily}"
+                        FontFamily="{StaticResource IconFontFamily}"
                         Style="{StaticResource OutlineButtonStyle}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="8,2,0,2"
-                        Padding="0,2,0,0"
+                        Padding="0,0,0,0"
                         Command="{Binding PreviousCommand}"
                         Visibility="{Binding CanNavigatePrevious, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
@@ -73,17 +73,17 @@
 
                 <!-- Next Button -->
                 <Button Grid.Column="2"
-                        Content="?"
+                        Content="&#xE72A;"
                         Width="28"
                         Height="28"
                         FontSize="16"
                         FontWeight="Bold"
-                        FontFamily="{StaticResource DongleFontFamily}"
+                        FontFamily="{StaticResource IconFontFamily}"
                         Style="{StaticResource OutlineButtonStyle}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,0,8,0"
-                        Padding="0,2,0,0"
+                        Padding="0,0,0,0"
                         Command="{Binding NextCommand}"
                         Visibility="{Binding CanNavigateNext, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </Grid>
@@ -98,7 +98,7 @@
                        Margin="20"
                        FontSize="14"
                        Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-            
+
             <!-- Test Page Content -->
             <ContentControl Content="{Binding CurrentTestPage}">
                 <ContentControl.Style>
