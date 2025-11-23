@@ -108,11 +108,11 @@ namespace LaptopHealth.Services.Hardware
 
         public Task<bool> StartCaptureAsync(CancellationToken cancellationToken = default)
         {
-            logger.Info($"[StartCaptureAsync] Called with cancellation token: {cancellationToken.GetHashCode()}");
+            logger.Debug($"[StartCaptureAsync] Called with cancellation token: {cancellationToken.GetHashCode()}");
             
             return ExecuteSequentiallyAsync(async (opCt) =>
             {
-                logger.Info($"[StartCaptureAsync] Inside ExecuteSequentiallyAsync, opCt: {opCt.GetHashCode()}");
+                logger.Debug($"[StartCaptureAsync] Inside ExecuteSequentiallyAsync, opCt: {opCt.GetHashCode()}");
                 
                 try
                 {
@@ -124,18 +124,16 @@ namespace LaptopHealth.Services.Hardware
 
                     if (_isCapturing)
                     {
-                        logger.Info("Camera already capturing");
+                        logger.Debug("Camera already capturing");
                         return true;
                     }
 
-                    logger.Info("Setting _isCapturing = true");
+                    logger.Debug("Setting _isCapturing = true");
                     _isCapturing = true;
 
-                    // Warm up the camera - use CancellationToken.None to ensure it completes
-                    // This is critical - warmup MUST complete for frames to be available
-                    logger.Info("About to call WarmupCaptureAsync...");
-                    await WarmupCaptureAsync(CancellationToken.None);
-                    logger.Info("WarmupCaptureAsync completed");
+                    logger.Debug("About to call WarmupCaptureAsync...");
+                    await WarmupCaptureAsync();
+                    logger.Debug("WarmupCaptureAsync completed");
 
                     logger.Info("Camera capture started successfully");
                     return true;
@@ -155,11 +153,11 @@ namespace LaptopHealth.Services.Hardware
             }, cancellationToken);
         }
 
-        private async Task WarmupCaptureAsync(CancellationToken cancellationToken)
+        private async Task WarmupCaptureAsync()
         {
             try
             {
-                logger.Info("Starting camera warmup...");
+                logger.Debug("Starting camera warmup...");
                 var warmupMat = new Mat();
                 int successfulReads = 0;
                 int totalAttempts = 0;
@@ -173,9 +171,6 @@ namespace LaptopHealth.Services.Hardware
                         successfulReads++;
                         logger.Debug($"Warmup frame {successfulReads}/3 captured");
                     }
-
-                    // Use async delay
-                    await Task.Delay(30, cancellationToken);
                 }
 
                 warmupMat.Dispose();
@@ -186,7 +181,7 @@ namespace LaptopHealth.Services.Hardware
                 }
                 else
                 {
-                    logger.Info($"Camera warmup successful: {successfulReads} frames in {totalAttempts} attempts");
+                    logger.Debug($"Camera warmup successful: {successfulReads} frames in {totalAttempts} attempts");
                 }
             }
             catch (Exception ex)
@@ -376,7 +371,7 @@ namespace LaptopHealth.Services.Hardware
                 var deviceNames = GetWindowsCameraDeviceNames();
                 if (deviceNames.Count > 0)
                 {
-                    logger.Info($"Found {deviceNames.Count} camera device names via WMI");
+                    logger.Debug($"Found {deviceNames.Count} camera device names via WMI");
                     for (int i = 0; i < deviceNames.Count; i++)
                     {
                         _deviceNameCache[i] = deviceNames[i];
@@ -441,7 +436,7 @@ namespace LaptopHealth.Services.Hardware
         private List<string> TryDetectWithBackend(string backendName)
         {
             var devices = new List<string>();
-            logger.Info($"Trying backend: {backendName}");
+            logger.Debug($"Trying backend: {backendName}");
 
             for (int i = 0; i < STANDARD_DEVICE_INDEX; i++)
             {
@@ -470,7 +465,7 @@ namespace LaptopHealth.Services.Hardware
 
                 if (width > 0 && height > 0)
                 {
-                    logger.Info($"Index {index}: {width}x{height}");
+                    logger.Debug($"Index {index}: {width}x{height}");
                     return GetDeviceName(index);
                 }
 
@@ -485,8 +480,8 @@ namespace LaptopHealth.Services.Hardware
         private List<string> DetectDevicesExtended()
         {
             var devices = new List<string>();
-            logger.Info("No devices found with standard detection.");
-            logger.Info("Attempting extended index enumeration (0-20)...\n");
+            logger.Debug("No devices found with standard detection.");
+            logger.Debug("Attempting extended index enumeration (0-20)...\n");
 
             for (int i = 0; i < MAX_DEVICE_INDEX; i++)
             {
@@ -516,7 +511,7 @@ namespace LaptopHealth.Services.Hardware
                 var fps = testCapture.Get(VideoCaptureProperties.Fps);
                 var backend = testCapture.Get(VideoCaptureProperties.Backend);
 
-                logger.Info($"[{index,2}] FOUND! Resolution: {width}x{height}, FPS: {fps}, Backend: {backend}");
+                logger.Debug($"[{index,2}] FOUND! Resolution: {width}x{height}, FPS: {fps}, Backend: {backend}");
 
                 return (width > 0 && height > 0) ? GetDeviceName(index) : null;
             }
@@ -662,9 +657,9 @@ namespace LaptopHealth.Services.Hardware
 
         private void PrintEnumerationInfo()
         {
-            logger.Info($"Environment: {Environment.OSVersion}");
-            logger.Info($".NET Version: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
-            logger.Info("OpenCV Backend: Checking available...");
+            logger.Debug($"Environment: {Environment.OSVersion}");
+            logger.Debug($".NET Version: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}");
+            logger.Debug("OpenCV Backend: Checking available...");
         }
 
         private void PrintEnumerationResult(List<string> devices)
@@ -689,9 +684,9 @@ namespace LaptopHealth.Services.Hardware
             var (width, height) = GetResolution(capture);
             var fps = capture.Get(VideoCaptureProperties.Fps);
 
-            logger.Info($"Successfully initialized device: {deviceName}");
-            logger.Info($"  Resolution: {width}x{height}");
-            logger.Info($"  FPS: {fps}");
+            logger.Debug($"Successfully initialized device: {deviceName}");
+            logger.Debug($"  Resolution: {width}x{height}");
+            logger.Debug($"  FPS: {fps}");
         }
 
         #endregion

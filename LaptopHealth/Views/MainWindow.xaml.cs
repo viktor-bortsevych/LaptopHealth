@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using LaptopHealth.Services.Infrastructure;
+using LaptopHealth.Services.Interfaces;
 
 namespace LaptopHealth.Views
 {
@@ -14,6 +15,7 @@ namespace LaptopHealth.Views
     {
         private int currentTestIndex = 0;
         private readonly IReadOnlyList<TestPageInfo> testPages;
+        private bool _isNavigating = false;
 
         public MainWindow()
         {
@@ -29,7 +31,9 @@ namespace LaptopHealth.Views
             }
 
             InitializeProgressIndicators();
-            LoadTest(0);
+            
+            Loaded += async (s, e) => await LoadTestAsync(0);
+            
             this.KeyDown += MainWindow_KeyDown;
         }
 
@@ -44,12 +48,11 @@ namespace LaptopHealth.Views
                 var button = new Button
                 {
                     Tag = testIndex,
-                    ToolTip = testPages[i].Name
+                    ToolTip = testPages[i].Name,
+                    // Apply the style from resources
+                    Style = (Style)Application.Current.FindResource("ProgressIndicatorButtonStyle")
                 };
 
-                // Apply the style from resources
-                button.Style = (Style)Application.Current.FindResource("ProgressIndicatorButtonStyle");
-                
                 // Set the active/inactive background color using resources
                 if (i == currentTestIndex)
                 {
@@ -60,32 +63,52 @@ namespace LaptopHealth.Views
                     button.Background = (System.Windows.Media.Brush)Application.Current.FindResource("InactiveIndicatorBrush");
                 }
 
-                button.Click += (s, e) => LoadTest(testIndex);
+                button.Click += async (s, e) => await LoadTestAsync(testIndex);
 
                 ProgressIndicatorsPanel.Children.Add(button);
             }
         }
 
-        private void LoadTest(int testIndex)
+        private async Task LoadTestAsync(int testIndex)
         {
-            if (testIndex < 0 || testIndex >= testPages.Count)
+            // Prevent duplicate navigation and concurrent navigation
+            if (testIndex < 0 || testIndex >= testPages.Count || _isNavigating)
                 return;
 
-            currentTestIndex = testIndex;
+            // Prevent navigating to the same page
+            if (testIndex == currentTestIndex && TestContentArea.Content != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Already on page {testIndex}, skipping navigation");
+                return;
+            }
 
-            var testInfo = testPages[testIndex];
-            LoadTestPage(testInfo.PageType);
+            _isNavigating = true;
+            
+            try
+            {
+                currentTestIndex = testIndex;
+                var testInfo = testPages[testIndex];
+                
+                await LoadTestPageAsync(testInfo.PageType);
 
-            UpdateNavigationButtons();
-            UpdateProgressIndicators();
+                UpdateNavigationButtons();
+                UpdateProgressIndicators();
+            }
+            finally
+            {
+                _isNavigating = false;
+            }
         }
 
-        private void LoadTestPage(
+        private async Task LoadTestPageAsync(
             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
             Type pageType)
         {
             try
             {
+                // **FIX: Properly cleanup old page before loading new one - AWAIT the cleanup**
+                await UnloadCurrentTestPageAsync();
+                
                 if (System.Activator.CreateInstance(pageType) is UserControl testPage)
                 {
                     TestContentArea.Content = testPage;
@@ -99,6 +122,45 @@ namespace LaptopHealth.Views
             {
                 System.Diagnostics.Debug.WriteLine($"Error loading test page: {ex.Message}");
                 ShowError($"Failed to load test page: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Properly unloads the current test page to ensure resources are cleaned up
+        /// </summary>
+        private async Task UnloadCurrentTestPageAsync()
+        {
+            if (TestContentArea.Content is UserControl oldPage)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Unloading page: {oldPage.GetType().Name}");
+                
+                // If page implements ITestPage, call its async cleanup method
+                if (oldPage is ITestPage testPage)
+                {
+                    try
+                    {
+                        await testPage.CleanupAsync();
+                        System.Diagnostics.Debug.WriteLine($"[MainWindow] CleanupAsync completed for {oldPage.GetType().Name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Error during CleanupAsync: {ex.Message}");
+                    }
+                }
+                
+                // Clear content - this will trigger Unloaded event
+                TestContentArea.Content = null;
+                
+                // Force layout update to ensure Unloaded event fires
+                TestContentArea.UpdateLayout();
+                
+                // If the page implements IDisposable, dispose it
+                if (oldPage is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+                
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Page unloaded: {oldPage.GetType().Name}");
             }
         }
 
@@ -138,23 +200,23 @@ namespace LaptopHealth.Views
             NextButton.IsEnabled = currentTestIndex < testPages.Count - 1;
         }
 
-        private void PreviousButton_Click(object sender, RoutedEventArgs e)
+        private async void PreviousButton_Click(object sender, RoutedEventArgs e)
         {
             if (currentTestIndex > 0)
             {
-                LoadTest(currentTestIndex - 1);
+                await LoadTestAsync(currentTestIndex - 1);
             }
         }
 
-        private void NextButton_Click(object sender, RoutedEventArgs e)
+        private async void NextButton_Click(object sender, RoutedEventArgs e)
         {
             if (currentTestIndex < testPages.Count - 1)
             {
-                LoadTest(currentTestIndex + 1);
+                await LoadTestAsync(currentTestIndex + 1);
             }
         }
 
-        private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+        private async void MainWindow_KeyDown(object sender, KeyEventArgs e)
         {
             switch (e.Key)
             {
@@ -162,7 +224,7 @@ namespace LaptopHealth.Views
                 case Key.Up:
                     if (currentTestIndex > 0)
                     {
-                        LoadTest(currentTestIndex - 1);
+                        await LoadTestAsync(currentTestIndex - 1);
                     }
                     e.Handled = true;
                     break;
@@ -171,7 +233,7 @@ namespace LaptopHealth.Views
                 case Key.Down:
                     if (currentTestIndex < testPages.Count - 1)
                     {
-                        LoadTest(currentTestIndex + 1);
+                        await LoadTestAsync(currentTestIndex + 1);
                     }
                     e.Handled = true;
                     break;

@@ -75,7 +75,6 @@ namespace LaptopHealth
         {
             var exception = e.ExceptionObject as Exception ?? new Exception("Unknown exception occurred");
             
-            // Ignore cancellation exceptions - they're expected during shutdown
             if (IsCancellationException(exception))
             {
                 return;
@@ -113,7 +112,6 @@ namespace LaptopHealth
                 return true;
             }
 
-            // Check for aggregated cancellation exceptions
             if (exception is AggregateException aggregateException)
             {
                 return aggregateException.InnerExceptions.All(IsCancellationException);
@@ -134,7 +132,6 @@ namespace LaptopHealth
             }
             catch
             {
-                // If logger fails, write to debug output as fallback
                 System.Diagnostics.Debug.WriteLine($"[CRITICAL] Unhandled exception on {context}: {exception}");
             }
         }
@@ -151,13 +148,8 @@ namespace LaptopHealth
 
             try
             {
-                // Cancel all ongoing operations
                 CancelAllOperations();
-
-                // Close all windows gracefully
                 CloseAllWindows();
-
-                // Dispose resources
                 DisposeResources();
             }
             catch (Exception ex)
@@ -277,7 +269,14 @@ namespace LaptopHealth
 
         private static EnvironmentInfo DetectEnvironment()
         {
-            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+            var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            
+            // If environment variable is not set, default to Production (use file logging)
+            if (string.IsNullOrWhiteSpace(envName))
+            {
+                return new EnvironmentInfo { Name = "Production", IsProduction = true };
+            }
+            
             var isProduction = envName.Equals("Production", StringComparison.OrdinalIgnoreCase);
             return new EnvironmentInfo { Name = envName, IsProduction = isProduction };
         }
@@ -314,11 +313,12 @@ namespace LaptopHealth
         private static void ConfigureSerilog(bool isProduction)
         {
             var logConfig = new LoggerConfiguration()
-                .MinimumLevel.Debug()
                 .Enrich.FromLogContext();
 
             if (isProduction)
             {
+                logConfig.MinimumLevel.Information();
+                
                 var logPath = CreateLogFilePath();
                 logConfig.WriteTo.File(
                     logPath,
@@ -329,6 +329,8 @@ namespace LaptopHealth
             }
             else
             {
+                logConfig.MinimumLevel.Debug();
+                
                 logConfig.WriteTo.Console(
                     outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
                 );
