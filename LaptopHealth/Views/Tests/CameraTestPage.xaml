@@ -1,8 +1,8 @@
-﻿<UserControl x:Class="LaptopHealth.Views.CameraTestPage"
+<UserControl x:Class="LaptopHealth.Views.CameraTestPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d" 
              d:DesignHeight="600" d:DesignWidth="900">
     
@@ -14,6 +14,7 @@
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/ButtonStyles.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/CommonStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
         </ResourceDictionary>
     </UserControl.Resources>
     
@@ -30,7 +31,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             
-            <!-- Row 1, Col 1: Camera View Placeholder -->
+            <!-- Camera View -->
             <Border Grid.Row="0"
                 Background="{StaticResource DarkGrayBrush}"
                 BorderBrush="{StaticResource PrimaryBrush}"
@@ -38,32 +39,15 @@
                 CornerRadius="8"
                 Padding="0">
 
-                <Border Background="{StaticResource DarkGrayBrush}"
-                    CornerRadius="8">
-
-                    <Grid x:Name="ClipGrid" SizeChanged="ClipGrid_SizeChanged">
-                        <Grid.Clip>
-                            <RectangleGeometry x:Name="GridClip"
-                                   RadiusX="8" RadiusY="8"/>
-                            <!-- CHANGED FROM 6 TO 8 -->
-                        </Grid.Clip>
-
-                        <!-- Aspect Ratio Container: 16:9 -->
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        
-                        <!-- This dummy control maintains 16:9 aspect ratio -->
-                        <Canvas Visibility="Hidden">
-                            <Rectangle Width="16" Height="9"/>
-                        </Canvas>
-                        
-                        <!-- Placeholder for Camera Feed -->
-                        <Viewbox x:Name="CameraPlaceholder"
-                                 Stretch="Uniform"
+                <Border Background="{StaticResource DarkGrayBrush}" CornerRadius="8" ClipToBounds="True">
+                    <Grid>
+                        <!-- Placeholder for Camera Feed - Using MDL2 Camera Icon -->
+                        <Viewbox Stretch="Uniform"
                                  HorizontalAlignment="Center"
-                                 VerticalAlignment="Center">
-                            <TextBlock Text="📷" 
+                                 VerticalAlignment="Center"
+                                 Visibility="{Binding IsCameraPlaceholderVisible, Converter={StaticResource BoolToVisConverter}}">
+                            <TextBlock Text="&#xE722;" 
+                                      FontFamily="{StaticResource IconFontFamily}"
                                       Foreground="{StaticResource WhiteBrush}"
                                       FontSize="120"
                                       HorizontalAlignment="Center"
@@ -72,14 +56,13 @@
                                       LineHeight="1"/>
                         </Viewbox>
                         
-                        <!-- Camera Preview Image (Will be used when camera is active) -->
-                        <Image x:Name="CameraPreview" 
+                        <!-- Camera Preview Image -->
+                        <Image Source="{Binding CameraPreviewSource}"
                               Stretch="UniformToFill"
-                              Visibility="Collapsed"/>
+                              Visibility="{Binding IsCameraPreviewVisible, Converter={StaticResource BoolToVisConverter}}"/>
                         
                         <!-- Overlay Text -->
-                        <TextBlock x:Name="CameraStatusText"
-                                  Text="Camera Preview" 
+                        <TextBlock Text="{Binding CameraStatusText}"
                                   Style="{StaticResource HeadlineText}"
                                   Foreground="{StaticResource WhiteBrush}"
                                   FontSize="28"
@@ -90,7 +73,7 @@
                 </Border>
             </Border>
             
-            <!-- Row 2, Col 1: Description -->
+            <!-- Description -->
             <Border Grid.Row="1" 
                     Style="{StaticResource CardStyle}"
                     Margin="0,16,0,0">
@@ -117,7 +100,7 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             
-            <!-- Row 1, Col 2: Select Camera Device Label -->
+            <!-- Select Camera Device Label -->
             <Border Grid.Row="0" 
                     Style="{StaticResource CardStyle}"
                     Padding="16,12">
@@ -128,7 +111,7 @@
                           Margin="0"/>
             </Border>
             
-            <!-- Row 2, Col 2: Camera Device ComboBox -->
+            <!-- Camera Device ComboBox -->
             <Border Grid.Row="1" 
                     Style="{StaticResource CardStyle}"
                     Margin="0,0,0,10">
@@ -138,23 +121,22 @@
                               FontSize="12"
                               Foreground="{StaticResource DarkGrayBrush}"
                               Margin="0,0,0,8"/>
-                    <ComboBox x:Name="DeviceComboBox"
+                    <ComboBox ItemsSource="{Binding AvailableDevices}"
+                             SelectedItem="{Binding SelectedDevice}"
                              Style="{StaticResource DefaultComboBoxStyle}"
                              Height="40"
-                             SelectionChanged="DeviceComboBox_SelectionChanged"
-                             IsEnabled="False"/>
-                    <TextBlock x:Name="NoDevicesMessage"
-                              Text="No camera devices found"
+                             IsEnabled="{Binding IsDeviceComboBoxEnabled}"/>
+                    <TextBlock Text="No camera devices found"
                               Style="{StaticResource BodyText}"
                               FontSize="12"
                               Foreground="{StaticResource DarkGrayBrush}"
                               Margin="0,8,0,0"
-                              Visibility="Visible"
+                              Visibility="{Binding IsNoDevicesMessageVisible, Converter={StaticResource BoolToVisConverter}}"
                               TextAlignment="Center"/>
                 </StackPanel>
             </Border>
             
-            <!-- Row 3, Col 2: Start/Stop Button and Refresh Button -->
+            <!-- Start/Stop Button and Refresh Button -->
             <Border Grid.Row="2" 
                     Style="{StaticResource CardStyle}"
                     Margin="0,0,0,10">
@@ -171,27 +153,28 @@
                         </Grid.ColumnDefinitions>
                         
                         <Button Grid.Column="0"
-                               x:Name="StartStopButton"
-                               Content="Start Camera"
+                               Content="{Binding StartStopButtonContent}"
                                Style="{StaticResource DefaultButtonStyle}"
                                Height="44"
-                               Click="StartStopButton_Click"
+                               Command="{Binding StartStopCameraCommand}"
+                               IsEnabled="{Binding IsStartStopButtonEnabled}"
                                Margin="0,0,8,0"/>
                         
-                        <!-- Text Button -->
+                        <!-- Refresh Button using MDL2 Icon -->
                         <Button Grid.Column="1"
-                               x:Name="RefreshDevicesButton"
-                               Content="🔄"
+                               Content="&#xE72C;"
+                               FontFamily="{StaticResource IconFontFamily}"
                                Style="{StaticResource TextButtonStyle}"
-                               FontSize="30"
+                               FontSize="24"
                                Padding="0"
-                               Click="RefreshDevicesButton_Click"
+                               Command="{Binding RefreshDevicesCommand}"
+                               IsEnabled="{Binding IsRefreshButtonEnabled}"
                                ToolTip="Refresh camera device list"/>
                     </Grid>
                 </StackPanel>
             </Border>
             
-            <!-- Row 4, Col 2: Last Action -->
+            <!-- Last Action -->
             <Border Grid.Row="3" 
                     Style="{StaticResource CardStyle}"
                     Margin="0,0,0,10">
@@ -206,8 +189,7 @@
                            BorderThickness="1"
                            CornerRadius="4"
                            Padding="12,8">
-                        <TextBlock x:Name="LastActionText"
-                                  Text="None"
+                        <TextBlock Text="{Binding LastActionText}"
                                   Style="{StaticResource BodyText}"
                                   Foreground="{StaticResource PrimaryBrush}"
                                   TextWrapping="Wrap"

@@ -9,8 +9,10 @@
     <!-- Using the full pack URI with filename to ensure it works in both design and runtime -->
     <FontFamily x:Key="DongleFontFamily">pack://application:,,,/Resources/Fonts/Dongle-Regular.ttf#Dongle</FontFamily>
     
-    <!-- You can define multiple custom fonts as needed -->
-    <!-- <FontFamily x:Key="HeadlineFontFamily">pack://application:,,,/Resources/Fonts/#Your Headline Font</FontFamily> -->
-    <!-- <FontFamily x:Key="BodyFontFamily">pack://application:,,,/Resources/Fonts/#Your Body Font</FontFamily> -->
+    <!-- Emoji font for proper emoji rendering -->
+    <FontFamily x:Key="EmojiFontFamily">Segoe UI Emoji, Segoe UI Symbol</FontFamily>
+    
+    <!-- MDL2 Assets for reliable Windows 10+ icons -->
+    <FontFamily x:Key="IconFontFamily">Segoe MDL2 Assets</FontFamily>
     
 </ResourceDictionary>

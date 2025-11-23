@@ -1,13 +1,12 @@
-﻿using LaptopHealth.Services.Hardware;
+﻿using LaptopHealth.Configuration;
+using LaptopHealth.Infrastructure;
 using LaptopHealth.Services.Infrastructure;
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System.Windows;
-using System.IO;
 using IApplicationLogger = LaptopHealth.Services.Interfaces.ILogger;
-using System.Threading;
 
 namespace LaptopHealth
 {
@@ -28,112 +27,13 @@ namespace LaptopHealth
             _applicationCts = new CancellationTokenSource();
 
             // Register global exception handlers
-            RegisterExceptionHandlers();
+            var exceptionHandler = new GlobalExceptionHandler(ShutdownApplication);
+            exceptionHandler.Register(this);
 
             var loadingWindow = new LoadingWindow();
             loadingWindow.Show();
 
             _ = InitializeApplicationAsync(loadingWindow);
-        }
-
-        /// <summary>
-        /// Registers global exception handlers for both UI and background threads
-        /// </summary>
-        private void RegisterExceptionHandlers()
-        {
-            // Handle exceptions on UI thread
-            DispatcherUnhandledException += App_DispatcherUnhandledException;
-
-            // Handle exceptions on background threads
-            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
-
-            // Handle task scheduler exceptions
-            TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
-        }
-
-        /// <summary>
-        /// Handles unhandled exceptions on the UI thread
-        /// </summary>
-        private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
-        {
-            // Ignore cancellation exceptions - they're expected during shutdown
-            if (IsCancellationException(e.Exception))
-            {
-                e.Handled = true;
-                return;
-            }
-
-            LogUnhandledException("UI Thread", e.Exception);
-            e.Handled = true;
-            ShutdownApplication(1);
-        }
-
-        /// <summary>
-        /// Handles unhandled exceptions on background threads
-        /// </summary>
-        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            var exception = e.ExceptionObject as Exception ?? new Exception("Unknown exception occurred");
-            
-            if (IsCancellationException(exception))
-            {
-                return;
-            }
-
-            LogUnhandledException("Background Thread", exception);
-            ShutdownApplication(1);
-        }
-
-        /// <summary>
-        /// Handles unobserved task exceptions
-        /// </summary>
-        private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
-        {
-            // Ignore cancellation exceptions - they're expected during shutdown
-            if (IsCancellationException(e.Exception))
-            {
-                e.SetObserved();
-                return;
-            }
-
-            LogUnhandledException("Task Scheduler", e.Exception);
-            e.SetObserved();
-            ShutdownApplication(1);
-        }
-
-        /// <summary>
-        /// Checks if an exception is a cancellation exception that should be ignored
-        /// </summary>
-        private static bool IsCancellationException(Exception exception)
-        {
-            // Check for direct cancellation exceptions
-            if (exception is OperationCanceledException or TaskCanceledException)
-            {
-                return true;
-            }
-
-            if (exception is AggregateException aggregateException)
-            {
-                return aggregateException.InnerExceptions.All(IsCancellationException);
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Logs an unhandled exception using the logger factory
-        /// </summary>
-        private static void LogUnhandledException(string context, Exception exception)
-        {
-            try
-            {
-                var logger = LoggerFactory.CreateLogger<App>();
-                logger.Error($"[CRITICAL] Unhandled exception on {context}", exception);
-            }
-            catch
-            {
-                System.Diagnostics.Debug.WriteLine($"[CRITICAL] Unhandled exception on {context}: {exception}");
-            }
         }
 
         /// <summary>
@@ -244,7 +144,7 @@ namespace LaptopHealth
             try
             {
                 var environment = DetectEnvironment();
-                ConfigureSerilog(environment.IsProduction);
+                LoggingConfiguration.ConfigureSerilog(environment.IsProduction);
 
                 ServiceProvider = BuildServiceProvider();
 
@@ -270,13 +170,13 @@ namespace LaptopHealth
         private static EnvironmentInfo DetectEnvironment()
         {
             var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            
+
             // If environment variable is not set, default to Production (use file logging)
             if (string.IsNullOrWhiteSpace(envName))
             {
                 return new EnvironmentInfo { Name = "Production", IsProduction = true };
             }
-            
+
             var isProduction = envName.Equals("Production", StringComparison.OrdinalIgnoreCase);
             return new EnvironmentInfo { Name = envName, IsProduction = isProduction };
         }
@@ -285,14 +185,7 @@ namespace LaptopHealth
         {
             var services = new ServiceCollection();
 
-            services.AddSingleton<IApplicationLogger>(provider =>
-            {
-                var serilogLogger = Log.ForContext<App>();
-                return new SerilogLogger(serilogLogger);
-            });
-
-            services.AddScoped<ICameraHardwareService, CameraOpenCvService>();
-            services.AddScoped<ICameraService, CameraService>();
+            services.AddApplicationServices();
 
             return services.BuildServiceProvider();
         }
@@ -301,53 +194,10 @@ namespace LaptopHealth
         {
             Dispatcher.Invoke(() =>
             {
-                var mainWindow = new MainWindow();
+                var mainWindow = ServiceProvider!.GetRequiredService<MainWindow>();
                 mainWindow.Show();
                 loadingWindow.Close();
             });
-        }
-
-        /// <summary>
-        /// Configures Serilog for the application
-        /// </summary>
-        private static void ConfigureSerilog(bool isProduction)
-        {
-            var logConfig = new LoggerConfiguration()
-                .Enrich.FromLogContext();
-
-            if (isProduction)
-            {
-                logConfig.MinimumLevel.Information();
-                
-                var logPath = CreateLogFilePath();
-                logConfig.WriteTo.File(
-                    logPath,
-                    outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}] [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                    rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 7
-                );
-            }
-            else
-            {
-                logConfig.MinimumLevel.Debug();
-                
-                logConfig.WriteTo.Console(
-                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
-                );
-            }
-
-            Log.Logger = logConfig.CreateLogger();
-        }
-
-        /// <summary>
-        /// Creates the log file path for production logging
-        /// </summary>
-        private static string CreateLogFilePath()
-        {
-            var exeDir = AppDomain.CurrentDomain.BaseDirectory;
-            var logDir = Path.Combine(exeDir, "Logs");
-            Directory.CreateDirectory(logDir);
-            return Path.Combine(logDir, "LaptopHealth_.log");
         }
 
         /// <summary>
