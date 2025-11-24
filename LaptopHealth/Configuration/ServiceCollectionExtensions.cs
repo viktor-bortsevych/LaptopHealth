@@ -3,6 +3,7 @@ using LaptopHealth.Services.Infrastructure;
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels;
 using LaptopHealth.Views;
+using LaptopHealth.Views.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using IApplicationLogger = LaptopHealth.Services.Interfaces.ILogger;
@@ -47,8 +48,13 @@ namespace LaptopHealth.Configuration
         /// </summary>
         private static IServiceCollection AddHardwareServices(this IServiceCollection services)
         {
+            // Camera services
             services.AddScoped<ICameraHardwareService, CameraOpenCvService>();
             services.AddScoped<ICameraService, CameraService>();
+
+            // Audio services
+            services.AddScoped<IAudioHardwareService, AudioNAudioService>();
+            services.AddScoped<IAudioService, AudioService>();
 
             return services;
         }
@@ -60,6 +66,7 @@ namespace LaptopHealth.Configuration
         {
             services.AddTransient<MainWindowViewModel>();
             services.AddTransient<CameraTestPageViewModel>();
+            services.AddTransient<MicrophoneTestPageViewModel>();
 
             return services;
         }
@@ -71,6 +78,7 @@ namespace LaptopHealth.Configuration
         {
             services.AddTransient<MainWindow>();
             services.AddTransient<CameraTestPage>();
+            services.AddTransient<MicrophoneTestPage>();
 
             return services;
         }
