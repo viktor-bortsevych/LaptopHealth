@@ -22,12 +22,11 @@ namespace LaptopHealth.Services.Infrastructure
             _cancellationToken = cancellationToken;
         }
 
-        public async Task<IEnumerable<string>> GetAvailableDevicesAsync()
+        public Task<IEnumerable<string>> GetAvailableDevicesAsync()
         {
             logger.Info("Fetching available microphone devices");
             _lastAction = "Fetched available devices";
-
-            return await hardwareService.GetAvailableDevicesAsync(_cancellationToken);
+            return Task.FromResult(hardwareService.GetAvailableDevices());
         }
 
         public async Task<bool> SelectDeviceAsync(string deviceName)
@@ -64,25 +63,25 @@ namespace LaptopHealth.Services.Infrastructure
             return result;
         }
 
-        public async Task<bool> StartMicrophoneAsync()
+        public Task<bool> StartMicrophoneAsync()
         {
             if (_selectedDevice == null)
             {
                 logger.Warn("No microphone device selected");
                 _lastAction = "Failed to start: No device selected";
-                return false;
+                return Task.FromResult(false);
             }
 
             if (IsMicrophoneRunning)
             {
                 logger.Info("Microphone already running");
                 _lastAction = "Microphone already running";
-                return true;
+                return Task.FromResult(true);
             }
 
             logger.Info($"Starting microphone: {_selectedDevice}");
 
-            var result = await hardwareService.StartCaptureAsync(_cancellationToken);
+            var result = hardwareService.StartCapture();
 
             _lastAction = result ? $"Started microphone: {_selectedDevice}" : "Failed to start microphone";
 
@@ -91,21 +90,21 @@ namespace LaptopHealth.Services.Infrastructure
                 logger.Error("Failed to start microphone");
             }
 
-            return result;
+            return Task.FromResult(result);
         }
 
-        public async Task<bool> StopMicrophoneAsync()
+        public Task<bool> StopMicrophoneAsync()
         {
             if (!IsMicrophoneRunning)
             {
                 logger.Info("Microphone not running");
                 _lastAction = "Microphone not running";
-                return true;
+                return Task.FromResult(true);
             }
 
             logger.Info("Stopping microphone");
 
-            var result = await hardwareService.StopCaptureAsync();
+            var result = hardwareService.StopCapture();
 
             _lastAction = result ? "Stopped microphone" : "Failed to stop microphone";
 
@@ -114,17 +113,17 @@ namespace LaptopHealth.Services.Infrastructure
                 logger.Error("Failed to stop microphone");
             }
 
-            return result;
+            return Task.FromResult(result);
         }
 
-        public async Task<float[]?> GetFrequencyDataAsync()
+        public Task<float[]?> GetFrequencyDataAsync()
         {
             if (!IsMicrophoneRunning)
             {
-                return null;
+                return Task.FromResult<float[]?>(null);
             }
 
-            return await hardwareService.GetFrequencyDataAsync(_cancellationToken);
+            return Task.FromResult(hardwareService.GetFrequencyData());
         }
     }
 }

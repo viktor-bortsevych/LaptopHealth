@@ -37,6 +37,7 @@ namespace LaptopHealth.ViewModels
         private TimeSpan _recordingTime;
         private bool _isRecording;
         private bool _isPlaying;
+        private EventHandler<WaveInEventArgs>? _currentDataAvailableHandler;
 
         private const int FREQUENCY_UPDATE_DELAY_MS = 50;
         private const int STOP_TIMEOUT_MS = 2000;
@@ -238,21 +239,7 @@ namespace LaptopHealth.ViewModels
 
         private void UpdateTimerDisplay()
         {
-            string timeString;
-            if (_isRecording)
-            {
-                timeString = _recordingTime.ToString(@"hh\:mm\:ss");
-            }
-            else if (_isPlaying && _waveFileReader != null)
-            {
-                timeString = _waveFileReader.CurrentTime.ToString(@"hh\:mm\:ss");
-            }
-            else
-            {
-                timeString = _recordingTime.ToString(@"hh\:mm\:ss");
-            }
-
-            RecordingTimerText = timeString;
+            RecordingTimerText = _recordingTime.ToString(@"hh\:mm\:ss");
         }
 
         #endregion
@@ -329,23 +316,10 @@ namespace LaptopHealth.ViewModels
                 }
 
                 // Stop recording/playback if running
-                if (_isRecording)
-                {
-                    await StopRecordingAsync();
-                }
-
-                if (_isPlaying)
-                {
-                    await StopPlaybackAsync();
-                }
+                await StopMediaOperationsAsync();
 
                 // Stop recording timer
-                if (_recordingTimer != null)
-                {
-                    _recordingTimer.Tick -= OnRecordingTimerTick;
-                    _recordingTimer.Stop();
-                    _recordingTimer = null;
-                }
+                CleanupRecordingTimer();
 
                 // Stop microphone if running
                 if (_audioService.IsMicrophoneRunning)
@@ -355,18 +329,7 @@ namespace LaptopHealth.ViewModels
                 }
 
                 // Stop frequency capture if still running
-                var taskToWait = _frequencyRenderTask;
-                if (taskToWait?.IsCompleted == false)
-                {
-                    LogDebug("Cancelling frequency capture during cleanup");
-                    if (_frequencyCaptureTokenSource is not null)
-                    {
-                        await _frequencyCaptureTokenSource.CancelAsync();
-                    }
-
-                    // Wait for frequency task to complete with timeout
-                    await Task.WhenAny(taskToWait, Task.Delay(CLEANUP_TIMEOUT_MS));
-                }
+                await StopFrequencyCaptureAsync();
 
                 LogDebug("CleanupAsync completed successfully");
             }
@@ -586,28 +549,53 @@ namespace LaptopHealth.ViewModels
 
         private async Task StartRecordingAsync()
         {
+            // Initialize local variables to ensure exception-safe resource management
+            MemoryStream? tempRecordingStream = null;
+            WaveInEvent? tempWaveInDevice = null;
+            WaveFileWriter? tempWaveFileWriter = null;
+            EventHandler<WaveInEventArgs>? tempHandler = null;
+
             try
             {
                 _recordingTime = TimeSpan.Zero;
-                _recordingStream = new MemoryStream();
-                _waveInDevice = new WaveInEvent { WaveFormat = new WaveFormat(44100, 16, 2) };
-                _waveFileWriter = new WaveFileWriter(_recordingStream, _waveInDevice.WaveFormat);
-                _waveInDevice.DataAvailable += (_, e) => _waveFileWriter?.Write(e.Buffer, 0, e.BytesRecorded);
-                _waveInDevice.RecordingStopped += (_, _) => _waveInDevice?.Dispose();
-                _waveInDevice.StartRecording();
-                _isRecording = true;
-                _recordingTimer?.Start();
-                RecordingButtonContent = "Stop Recording";
-                IsPlaybackButtonEnabled = false;
-                RecordingStatusText = "Recording...";
-                LastActionText = "Recording started";
+                
+                // Initialize all resources in local variables first
+                tempRecordingStream = new MemoryStream();
+                tempWaveInDevice = new WaveInEvent { WaveFormat = new WaveFormat(44100, 16, 2) };
+                tempWaveFileWriter = new WaveFileWriter(tempRecordingStream, tempWaveInDevice.WaveFormat);
+                
+                // Store local reference to avoid race condition with disposal
+                var writer = tempWaveFileWriter;
+                tempHandler = (_, e) => writer.Write(e.Buffer, 0, e.BytesRecorded);
+                tempWaveInDevice.DataAvailable += tempHandler;
+                tempWaveInDevice.RecordingStopped += (_, _) => tempWaveInDevice?.Dispose();
+                
+                // Start recording
+                tempWaveInDevice.StartRecording();
 
-                // Update command can-execute state
+                // Only assign to fields after everything succeeds
+                _recordingStream = tempRecordingStream;
+                _waveInDevice = tempWaveInDevice;
+                _waveFileWriter = tempWaveFileWriter;
+                _currentDataAvailableHandler = tempHandler;
+                
+                // Update state
+                UpdateMediaState(new MediaStateUpdate
+                {
+                    IsRecording = true,
+                    RecordingButton = "Stop Recording",
+                    IsPlaybackEnabled = false,
+                    Status = "Recording...",
+                    Action = "Recording started"
+                });
+                
+                _recordingTimer?.Start();
                 AsyncRelayCommand.RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {
                 LogError("StartRecording", ex);
+                await CleanupFailedRecordingAsync(tempWaveInDevice, tempHandler, tempWaveFileWriter, tempRecordingStream);
                 LastActionText = $"Error starting recording: {ex.Message}";
             }
         }
@@ -616,6 +604,15 @@ namespace LaptopHealth.ViewModels
         {
             _isRecording = false;
             _recordingTimer?.Stop();
+            
+            // Unsubscribe from event before stopping to prevent new events
+            if (_waveInDevice != null && _currentDataAvailableHandler != null)
+            {
+                _waveInDevice.DataAvailable -= _currentDataAvailableHandler;
+                _currentDataAvailableHandler = null;
+            }
+            
+            // Stop recording - this ensures no new events will fire
             _waveInDevice?.StopRecording();
             
             if (_waveFileWriter is not null)
@@ -636,12 +633,14 @@ namespace LaptopHealth.ViewModels
             _waveInDevice?.Dispose();
             _waveInDevice = null;
 
-            RecordingButtonContent = "Start Recording";
-            IsPlaybackButtonEnabled = _recordedAudio?.Length > 0;
-            RecordingStatusText = "Ready";
-            LastActionText = "Recording stopped";
+            UpdateMediaState(new MediaStateUpdate
+            {
+                RecordingButton = "Start Recording",
+                IsPlaybackEnabled = _recordedAudio?.Length > 0,
+                Status = "Ready",
+                Action = "Recording stopped"
+            });
             
-            // Update command can-execute state
             AsyncRelayCommand.RaiseCanExecuteChanged();
         }
 
@@ -655,6 +654,11 @@ namespace LaptopHealth.ViewModels
 
         private async Task StartPlaybackAsync()
         {
+            // Initialize local variables to ensure exception-safe resource management
+            WaveOutEvent? tempWaveOut = null;
+            MemoryStream? tempPlaybackStream = null;
+            WaveFileReader? tempWaveFileReader = null;
+
             try
             {
                 if (_recordedAudio == null || _recordedAudio.Length == 0)
@@ -663,25 +667,38 @@ namespace LaptopHealth.ViewModels
                     return;
                 }
 
-                _waveOutDevice = new WaveOutEvent();
-                _playbackStream = new MemoryStream(_recordedAudio);
-                _waveFileReader = new WaveFileReader(_playbackStream);
-                _waveOutDevice.Init(_waveFileReader);
-                _waveOutDevice.PlaybackStopped += OnPlaybackStopped;
-                _waveOutDevice.Play();
-                _isPlaying = true;
-                _recordingTimer?.Start();
-                PlaybackButtonContent = "Stop Playback";
-                IsRecordingButtonEnabled = false;
-                RecordingStatusText = "Playing...";
-                LastActionText = "Playback started";
+                // Initialize all resources in local variables first
+                tempWaveOut = new WaveOutEvent();
+                tempPlaybackStream = new MemoryStream(_recordedAudio);
+                tempWaveFileReader = new WaveFileReader(tempPlaybackStream);
                 
-                // Update command can-execute state
+                // Initialize and start playback
+                tempWaveOut.Init(tempWaveFileReader);
+                tempWaveOut.PlaybackStopped += OnPlaybackStopped;
+                tempWaveOut.Play();
+
+                // Only assign to fields after everything succeeds
+                _waveOutDevice = tempWaveOut;
+                _playbackStream = tempPlaybackStream;
+                _waveFileReader = tempWaveFileReader;
+                
+                // Update state
+                UpdateMediaState(new MediaStateUpdate
+                {
+                    IsPlaying = true,
+                    PlaybackButton = "Stop Playback",
+                    IsRecordingEnabled = false,
+                    Status = "Playing...",
+                    Action = "Playback started"
+                });
+                
+                _recordingTimer?.Start();
                 AsyncRelayCommand.RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {
                 LogError("StartPlayback", ex);
+                await CleanupFailedPlaybackAsync(tempWaveOut, tempWaveFileReader, tempPlaybackStream);
                 await StopPlaybackAsync();
                 LastActionText = $"Error starting playback: {ex.Message}";
             }
@@ -714,7 +731,7 @@ namespace LaptopHealth.ViewModels
                 _waveOutDevice = null;
             }
 
-            if (_waveFileReader is not null)
+            if (_waveFileReader != null)
             {
                 await _waveFileReader.DisposeAsync();
                 _waveFileReader = null;
@@ -726,12 +743,14 @@ namespace LaptopHealth.ViewModels
                 _playbackStream = null;
             }
             
-            PlaybackButtonContent = "Start Playback";
-            IsRecordingButtonEnabled = true;
-            RecordingStatusText = "Ready";
-            LastActionText = "Playback stopped";
+            UpdateMediaState(new MediaStateUpdate
+            {
+                PlaybackButton = "Start Playback",
+                IsRecordingEnabled = true,
+                Status = "Ready",
+                Action = "Playback stopped"
+            });
             
-            // Update command can-execute state
             AsyncRelayCommand.RaiseCanExecuteChanged();
         }
 
@@ -892,6 +911,21 @@ namespace LaptopHealth.ViewModels
             }
         }
 
+        /// <summary>
+        /// Updates recording/playback state properties in a single method to avoid duplication
+        /// </summary>
+        private void UpdateMediaState(MediaStateUpdate update)
+        {
+            if (update.IsRecording.HasValue) _isRecording = update.IsRecording.Value;
+            if (update.IsPlaying.HasValue) _isPlaying = update.IsPlaying.Value;
+            if (update.RecordingButton != null) RecordingButtonContent = update.RecordingButton;
+            if (update.PlaybackButton != null) PlaybackButtonContent = update.PlaybackButton;
+            if (update.IsRecordingEnabled.HasValue) IsRecordingButtonEnabled = update.IsRecordingEnabled.Value;
+            if (update.IsPlaybackEnabled.HasValue) IsPlaybackButtonEnabled = update.IsPlaybackEnabled.Value;
+            if (update.Status != null) RecordingStatusText = update.Status;
+            if (update.Action != null) LastActionText = update.Action;
+        }
+
         #endregion
 
         #region Helper Methods
@@ -912,9 +946,7 @@ namespace LaptopHealth.ViewModels
             }
 
             // Disable UI
-            IsStartStopButtonEnabled = false;
-            IsDeviceComboBoxEnabled = false;
-            IsRefreshButtonEnabled = false;
+            SetUIOperationState(false);
 
             // Cancel any in-progress operation
             if (_currentOperationCts is not null)
@@ -954,9 +986,7 @@ namespace LaptopHealth.ViewModels
                 // Re-enable UI (only if not cleaned up)
                 if (!_isCleanedUp)
                 {
-                    IsStartStopButtonEnabled = true;
-                    IsDeviceComboBoxEnabled = AvailableDevices.Count > 0;
-                    IsRefreshButtonEnabled = true;
+                    SetUIOperationState(true);
                 }
             }
         }
@@ -971,6 +1001,94 @@ namespace LaptopHealth.ViewModels
                 await operation(ct);
                 return true;
             }, operationName);
+        }
+
+        private void SetUIOperationState(bool enabled)
+        {
+            IsStartStopButtonEnabled = enabled;
+            IsDeviceComboBoxEnabled = enabled && AvailableDevices.Count > 0;
+            IsRefreshButtonEnabled = enabled;
+        }
+
+        private async Task StopMediaOperationsAsync()
+        {
+            if (_isRecording)
+            {
+                await StopRecordingAsync();
+            }
+
+            if (_isPlaying)
+            {
+                await StopPlaybackAsync();
+            }
+        }
+
+        private void CleanupRecordingTimer()
+        {
+            if (_recordingTimer != null)
+            {
+                _recordingTimer.Tick -= OnRecordingTimerTick;
+                _recordingTimer.Stop();
+                _recordingTimer = null;
+            }
+        }
+
+        private async Task StopFrequencyCaptureAsync()
+        {
+            var taskToWait = _frequencyRenderTask;
+            if (taskToWait?.IsCompleted == false)
+            {
+                LogDebug("Cancelling frequency capture during cleanup");
+                if (_frequencyCaptureTokenSource is not null)
+                {
+                    await _frequencyCaptureTokenSource.CancelAsync();
+                }
+
+                // Wait for frequency task to complete with timeout
+                await Task.WhenAny(taskToWait, Task.Delay(CLEANUP_TIMEOUT_MS));
+            }
+        }
+
+        private static async Task CleanupFailedRecordingAsync(
+            WaveInEvent? waveInDevice,
+            EventHandler<WaveInEventArgs>? handler,
+            WaveFileWriter? waveFileWriter,
+            MemoryStream? recordingStream)
+        {
+            if (waveInDevice != null && handler != null)
+            {
+                waveInDevice.DataAvailable -= handler;
+            }
+
+            waveInDevice?.Dispose();
+
+            if (waveFileWriter != null)
+            {
+                await waveFileWriter.DisposeAsync();
+            }
+
+            if (recordingStream != null)
+            {
+                await recordingStream.DisposeAsync();
+            }
+        }
+
+        private static async Task CleanupFailedPlaybackAsync(
+            WaveOutEvent? waveOut,
+            WaveFileReader? waveFileReader,
+            MemoryStream? playbackStream)
+        {
+            waveOut?.Dispose();
+            
+            if (waveFileReader != null)
+            {
+                await waveFileReader.DisposeAsync();
+            }
+
+            if (playbackStream != null)
+            {
+                await playbackStream.DisposeAsync();
+            }
         }
 
         private static void LogDebug(string message)
@@ -996,17 +1114,11 @@ namespace LaptopHealth.ViewModels
 
             if (disposing)
             {
-                // Dispose managed resources - synchronous only
-                // Async cleanup should be done in CleanupAsync before disposal
                 _uiOperationLock?.Dispose();
                 _currentOperationCts?.Dispose();
                 _frequencyCaptureTokenSource?.Dispose();
                 
-                if (_recordingTimer != null)
-                {
-                    _recordingTimer.Tick -= OnRecordingTimerTick;
-                    _recordingTimer.Stop();
-                }
+                CleanupRecordingTimer();
                 
                 _waveInDevice?.Dispose();
                 _waveFileWriter?.Dispose();
@@ -1046,5 +1158,20 @@ namespace LaptopHealth.ViewModels
             get => _magnitude;
             set => SetProperty(ref _magnitude, value);
         }
+    }
+
+    /// <summary>
+    /// Represents the state update for media operations (recording/playback)
+    /// </summary>
+    internal record MediaStateUpdate
+    {
+        public bool? IsRecording { get; init; }
+        public bool? IsPlaying { get; init; }
+        public string? RecordingButton { get; init; }
+        public string? PlaybackButton { get; init; }
+        public bool? IsRecordingEnabled { get; init; }
+        public bool? IsPlaybackEnabled { get; init; }
+        public string? Status { get; init; }
+        public string? Action { get; init; }
     }
 }

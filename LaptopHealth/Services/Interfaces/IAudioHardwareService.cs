@@ -9,7 +9,7 @@ namespace LaptopHealth.Services.Interfaces
         /// <summary>
         /// Gets a list of available microphone devices
         /// </summary>
-        Task<IEnumerable<string>> GetAvailableDevicesAsync(CancellationToken cancellationToken);
+        IEnumerable<string> GetAvailableDevices();
 
         /// <summary>
         /// Initializes a specific microphone device
@@ -19,17 +19,17 @@ namespace LaptopHealth.Services.Interfaces
         /// <summary>
         /// Starts audio capture from the selected device
         /// </summary>
-        Task<bool> StartCaptureAsync(CancellationToken cancellationToken);
+        bool StartCapture();
 
         /// <summary>
         /// Stops audio capture
         /// </summary>
-        Task<bool> StopCaptureAsync();
+        bool StopCapture();
 
         /// <summary>
         /// Gets the current frequency analysis data (32 frequency bands)
         /// </summary>
-        Task<float[]?> GetFrequencyDataAsync(CancellationToken cancellationToken);
+        float[]? GetFrequencyData();
 
         /// <summary>
         /// Indicates whether audio is currently being captured

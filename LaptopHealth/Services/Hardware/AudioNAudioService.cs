@@ -10,16 +10,24 @@ namespace LaptopHealth.Services.Hardware
     public class AudioNAudioService : IAudioHardwareService, IDisposable
     {
         private WaveInEvent? _waveIn;
-        private readonly float[]? _buffer;
+        private readonly float[] _buffer;
         private int _bufferIndex;
-        private readonly float[]? _frequencyBands;
-        private readonly float[]? _smoothedBands;
-        private int[]? _binMap;
+        private readonly float[] _frequencyBands;
+        private readonly float[] _smoothedBands;
+        private readonly int[] _binMap;
         private string? _selectedDevice;
         private bool _isCapturing;
         private readonly Lock _lockObject = new();
         private readonly ILogger _logger;
         private bool _disposed;
+        
+        // Pre-computed values for FFT optimization
+        private readonly float[] _hammingWindow;
+        private readonly Complex[] _fftBuffer;
+        
+        // Snapshot buffer for FFT to avoid race conditions
+        private readonly float[] _fftInputBuffer;
+        private volatile bool _bufferNeedsAnalysis;
 
         private const int SAMPLE_RATE = 44100;
         private const int BUFFER_SIZE = 1024;
@@ -34,7 +42,24 @@ namespace LaptopHealth.Services.Hardware
             _buffer = new float[BUFFER_SIZE];
             _frequencyBands = new float[FREQUENCY_BANDS];
             _smoothedBands = new float[FREQUENCY_BANDS];
+            _fftBuffer = new Complex[BUFFER_SIZE];
+            _hammingWindow = new float[BUFFER_SIZE];
+            _fftInputBuffer = new float[BUFFER_SIZE];
+            _binMap = new int[FREQUENCY_BANDS + 1];
+            
+            InitializeHammingWindow();
             InitializeBinMap();
+        }
+
+        /// <summary>
+        /// Pre-computes Hamming window coefficients for FFT
+        /// </summary>
+        private void InitializeHammingWindow()
+        {
+            for (int n = 0; n < BUFFER_SIZE; n++)
+            {
+                _hammingWindow[n] = 0.54f - 0.46f * (float)Math.Cos(2 * Math.PI * n / (BUFFER_SIZE - 1));
+            }
         }
 
         /// <summary>
@@ -42,7 +67,6 @@ namespace LaptopHealth.Services.Hardware
         /// </summary>
         private void InitializeBinMap()
         {
-            _binMap = new int[FREQUENCY_BANDS + 1];
             for (int i = 0; i <= FREQUENCY_BANDS; i++)
             {
                 // Logarithmic frequency mapping from 20Hz to Nyquist frequency
@@ -51,7 +75,7 @@ namespace LaptopHealth.Services.Hardware
             }
         }
 
-        public async Task<IEnumerable<string>> GetAvailableDevicesAsync(CancellationToken cancellationToken)
+        public IEnumerable<string> GetAvailableDevices()
         {
             try
             {
@@ -60,7 +84,7 @@ namespace LaptopHealth.Services.Hardware
                 for (int i = 0; i < WaveIn.DeviceCount; i++)
                 {
                     var capabilities = WaveIn.GetCapabilities(i);
-                    if (capabilities.Channels > 0) // Only include devices with audio input
+                    if (capabilities.Channels > 0)
                     {
                         devices.Add($"{capabilities.ProductName} (Device {i})");
                     }
@@ -83,7 +107,7 @@ namespace LaptopHealth.Services.Hardware
                 // Stop current capture if running
                 if (_isCapturing)
                 {
-                    await StopCaptureAsync();
+                    StopCapture();
                 }
 
                 // Find device index from name
@@ -105,7 +129,7 @@ namespace LaptopHealth.Services.Hardware
             }
         }
 
-        public async Task<bool> StartCaptureAsync(CancellationToken cancellationToken)
+        public bool StartCapture()
         {
             if (_selectedDevice == null)
             {
@@ -121,29 +145,30 @@ namespace LaptopHealth.Services.Hardware
 
             try
             {
-                lock (_lockObject)
+                int deviceIndex = GetDeviceIndexFromName(_selectedDevice);
+                if (deviceIndex < 0)
                 {
-                    int deviceIndex = GetDeviceIndexFromName(_selectedDevice);
-                    if (deviceIndex < 0)
-                    {
-                        _logger.Error($"Device not found: {_selectedDevice}");
-                        return false;
-                    }
-
-                    _waveIn = new WaveInEvent
-                    {
-                        DeviceNumber = deviceIndex,
-                        WaveFormat = new WaveFormat(SAMPLE_RATE, 1)
-                    };
-
-                    _waveIn.DataAvailable += ProcessAudioData;
-                    _waveIn.StartRecording();
-                    _isCapturing = true;
-                    _bufferIndex = 0;
-
-                    _logger.Info("Audio capture started");
+                    _logger.Error($"Device not found: {_selectedDevice}");
+                    return false;
                 }
 
+                _waveIn = new WaveInEvent
+                {
+                    DeviceNumber = deviceIndex,
+                    WaveFormat = new WaveFormat(SAMPLE_RATE, 1)
+                };
+
+                _waveIn.DataAvailable += ProcessAudioData;
+                _waveIn.StartRecording();
+                _isCapturing = true;
+                
+                lock (_lockObject)
+                {
+                    _bufferIndex = 0;
+                    _bufferNeedsAnalysis = false;
+                }
+
+                _logger.Info("Audio capture started");
                 return true;
             }
             catch (Exception ex)
@@ -156,34 +181,28 @@ namespace LaptopHealth.Services.Hardware
             }
         }
 
-        public async Task<bool> StopCaptureAsync()
+        public bool StopCapture()
         {
             try
             {
-                lock (_lockObject)
+                _isCapturing = false;
+
+                if (_waveIn != null)
                 {
-                    _isCapturing = false;
-
-                    if (_waveIn != null)
-                    {
-                        _waveIn.StopRecording();
-                        _waveIn.Dispose();
-                        _waveIn = null;
-                    }
-
-                    if (_frequencyBands != null)
-                    {
-                        Array.Clear(_frequencyBands, 0, _frequencyBands.Length);
-                    }
-
-                    if (_smoothedBands != null)
-                    {
-                        Array.Clear(_smoothedBands, 0, _smoothedBands.Length);
-                    }
-
-                    _logger.Info("Audio capture stopped");
+                    _waveIn.DataAvailable -= ProcessAudioData;
+                    _waveIn.StopRecording();
+                    _waveIn.Dispose();
+                    _waveIn = null;
                 }
 
+                lock (_lockObject)
+                {
+                    Array.Clear(_frequencyBands, 0, _frequencyBands.Length);
+                    Array.Clear(_smoothedBands, 0, _smoothedBands.Length);
+                    _bufferNeedsAnalysis = false;
+                }
+
+                _logger.Info("Audio capture stopped");
                 return true;
             }
             catch (Exception ex)
@@ -193,11 +212,17 @@ namespace LaptopHealth.Services.Hardware
             }
         }
 
-        public async Task<float[]?> GetFrequencyDataAsync(CancellationToken cancellationToken)
+        public float[]? GetFrequencyData()
         {
-            if (!_isCapturing || _smoothedBands == null)
+            if (!_isCapturing)
             {
                 return null;
+            }
+
+            // Perform analysis if new data is available
+            if (_bufferNeedsAnalysis)
+            {
+                AnalyzeFrequencies();
             }
 
             lock (_lockObject)
@@ -207,24 +232,30 @@ namespace LaptopHealth.Services.Hardware
         }
 
         /// <summary>
-        /// Processes incoming audio data
+        /// Processes incoming audio data (runs on background thread)
         /// </summary>
         private void ProcessAudioData(object? sender, WaveInEventArgs e)
         {
-            if (_buffer == null)
+            if (!_isCapturing)
                 return;
 
             try
             {
+                // Write to circular buffer without locking for performance
                 for (int i = 0; i < e.BytesRecorded / 2; i++)
                 {
                     short sample = BitConverter.ToInt16(e.Buffer, i * 2);
-                    _buffer[_bufferIndex] = sample / 32768f;
-                    _bufferIndex = (_bufferIndex + 1) % BUFFER_SIZE;
+                    int currentIndex = _bufferIndex;
+                    _buffer[currentIndex] = sample / 32768f;
+                    
+                    // Update index atomically
+                    int nextIndex = (currentIndex + 1) % BUFFER_SIZE;
+                    _bufferIndex = nextIndex;
 
-                    if (_bufferIndex % (BUFFER_SIZE / 2) == 0)
+                    // Signal analysis needed when we have a full buffer
+                    if (nextIndex % (BUFFER_SIZE / 2) == 0)
                     {
-                        AnalyzeFrequencies();
+                        _bufferNeedsAnalysis = true;
                     }
                 }
             }
@@ -235,17 +266,27 @@ namespace LaptopHealth.Services.Hardware
         }
 
         /// <summary>
-        /// Analyzes audio frequencies using FFT
+        /// Analyzes audio frequencies using FFT (thread-safe snapshot approach)
         /// </summary>
         private void AnalyzeFrequencies()
         {
-            if (_buffer == null || _frequencyBands == null || _smoothedBands == null || _binMap == null)
-                return;
-
             lock (_lockObject)
             {
-                // Compute FFT magnitudes
-                float[] magnitudes = ComputeFFT();
+                if (!_bufferNeedsAnalysis)
+                    return;
+
+                _bufferNeedsAnalysis = false;
+
+                // Create snapshot of current buffer state
+                int snapshotIndex = _bufferIndex;
+                for (int n = 0; n < BUFFER_SIZE; n++)
+                {
+                    int idx = ((snapshotIndex - BUFFER_SIZE + n) % BUFFER_SIZE + BUFFER_SIZE) % BUFFER_SIZE;
+                    _fftInputBuffer[n] = _buffer[idx];
+                }
+
+                // Compute FFT magnitudes from snapshot
+                float[] magnitudes = ComputeFFT(_fftInputBuffer);
 
                 // Extract frequency bands using logarithmic mapping
                 for (int band = 0; band < FREQUENCY_BANDS; band++)
@@ -274,33 +315,86 @@ namespace LaptopHealth.Services.Hardware
         }
 
         /// <summary>
-        /// Computes FFT magnitudes for the current buffer
+        /// Computes FFT magnitudes
         /// </summary>
-        private float[] ComputeFFT()
+        private float[] ComputeFFT(float[] inputBuffer)
         {
-            if (_buffer == null)
-                return new float[BUFFER_SIZE / 2];
+            // Prepare FFT input with windowing
+            for (int n = 0; n < BUFFER_SIZE; n++)
+            {
+                _fftBuffer[n] = new Complex(inputBuffer[n] * _hammingWindow[n], 0);
+            }
 
+            // Perform in-place FFT
+            FFTCooleyTukey(_fftBuffer);
+
+            // Compute magnitudes
             float[] magnitudes = new float[BUFFER_SIZE / 2];
-
             for (int k = 0; k < BUFFER_SIZE / 2; k++)
             {
-                float real = 0, imag = 0;
-
-                for (int n = 0; n < BUFFER_SIZE; n++)
-                {
-                    float window = 0.5f * (1 - (float)Math.Cos(2 * Math.PI * n / (BUFFER_SIZE - 1)));
-                    int idx = ((_bufferIndex - BUFFER_SIZE + n) % _buffer.Length + _buffer.Length) % _buffer.Length;
-
-                    float angle = -2f * (float)Math.PI * k * n / BUFFER_SIZE;
-                    real += _buffer[idx] * window * (float)Math.Cos(angle);
-                    imag += _buffer[idx] * window * (float)Math.Sin(angle);
-                }
-
-                magnitudes[k] = (float)Math.Sqrt(real * real + imag * imag) / BUFFER_SIZE;
+                magnitudes[k] = _fftBuffer[k].Magnitude / BUFFER_SIZE;
             }
 
             return magnitudes;
+        }
+
+        /// <summary>
+        /// Cooley-Tukey FFT algorithm (in-place, iterative, radix-2)
+        /// Complexity: O(n log n)
+        /// </summary>
+        private static void FFTCooleyTukey(Complex[] buffer)
+        {
+            int n = buffer.Length;
+            
+            // Bit-reversal permutation
+            int bits = (int)Math.Log2(n);
+            for (int i = 0; i < n; i++)
+            {
+                int j = ReverseBits(i, bits);
+                if (j > i)
+                {
+                    (buffer[i], buffer[j]) = (buffer[j], buffer[i]);
+                }
+            }
+
+            // Cooley-Tukey decimation-in-time radix-2 FFT
+            for (int size = 2; size <= n; size *= 2)
+            {
+                int halfSize = size / 2;
+                float angleStep = -2f * (float)Math.PI / size;
+
+                for (int start = 0; start < n; start += size)
+                {
+                    for (int k = 0; k < halfSize; k++)
+                    {
+                        float angle = angleStep * k;
+                        Complex w = new((float)Math.Cos(angle), (float)Math.Sin(angle));
+                        
+                        int evenIndex = start + k;
+                        int oddIndex = start + k + halfSize;
+                        
+                        Complex even = buffer[evenIndex];
+                        Complex odd = buffer[oddIndex] * w;
+                        
+                        buffer[evenIndex] = even + odd;
+                        buffer[oddIndex] = even - odd;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reverses bits of an integer for bit-reversal permutation
+        /// </summary>
+        private static int ReverseBits(int value, int bits)
+        {
+            int result = 0;
+            for (int i = 0; i < bits; i++)
+            {
+                result = (result << 1) | (value & 1);
+                value >>= 1;
+            }
+            return result;
         }
 
         /// <summary>
@@ -354,7 +448,7 @@ namespace LaptopHealth.Services.Hardware
 
             if (disposing)
             {
-                StopCaptureAsync().Wait();
+                StopCapture();
                 _waveIn?.Dispose();
             }
 
@@ -365,5 +459,28 @@ namespace LaptopHealth.Services.Hardware
         {
             Dispose(false);
         }
+    }
+
+    /// <summary>
+    /// Represents a complex number for FFT calculations
+    /// </summary>
+    internal readonly struct Complex(float real, float imaginary)
+    {
+        public float Real { get; } = real;
+        public float Imaginary { get; } = imaginary;
+
+        public float Magnitude => (float)Math.Sqrt(Real * Real + Imaginary * Imaginary);
+
+        public static Complex operator +(Complex a, Complex b) =>
+            new(a.Real + b.Real, a.Imaginary + b.Imaginary);
+
+        public static Complex operator -(Complex a, Complex b) =>
+            new(a.Real - b.Real, a.Imaginary - b.Imaginary);
+
+        public static Complex operator *(Complex a, Complex b) =>
+            new(
+                a.Real * b.Real - a.Imaginary * b.Imaginary,
+                a.Real * b.Imaginary + a.Imaginary * b.Real
+            );
     }
 }
