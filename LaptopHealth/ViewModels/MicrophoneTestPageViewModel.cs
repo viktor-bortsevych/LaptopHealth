@@ -2,6 +2,10 @@
 using LaptopHealth.ViewModels.Infrastructure;
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using NAudio.Wave;
+using System.Windows.Threading;
+using System.IO;
+using System.Windows;
 
 namespace LaptopHealth.ViewModels
 {
@@ -13,7 +17,7 @@ namespace LaptopHealth.ViewModels
         #region Fields & Constants
 
         private readonly IAudioService _audioService;
-        private CancellationTokenSource? _frequencyCapureTokenSource;
+        private CancellationTokenSource? _frequencyCaptureTokenSource;
         private Task? _frequencyRenderTask;
         private readonly SemaphoreSlim _uiOperationLock = new(1, 1);
         private CancellationTokenSource? _currentOperationCts;
@@ -21,8 +25,22 @@ namespace LaptopHealth.ViewModels
         private bool _isCleanedUp;
         private readonly TaskCompletionSource<bool> _devicesLoadedTcs = new();
 
+        // Recording and Playback fields
+        private WaveInEvent? _waveInDevice;
+        private MemoryStream? _recordingStream;
+        private byte[]? _recordedAudio;
+        private WaveFileWriter? _waveFileWriter;
+        private WaveOutEvent? _waveOutDevice;
+        private WaveFileReader? _waveFileReader;
+        private MemoryStream? _playbackStream;
+        private DispatcherTimer? _recordingTimer;
+        private TimeSpan _recordingTime;
+        private bool _isRecording;
+        private bool _isPlaying;
+
         private const int FREQUENCY_UPDATE_DELAY_MS = 50;
         private const int STOP_TIMEOUT_MS = 2000;
+        private const int CLEANUP_TIMEOUT_MS = 1000;
         private const int ERROR_RETRY_DELAY_MS = 100;
         private const string START_MICROPHONE_TEXT = "Start Microphone";
         private const int FREQUENCY_BANDS = 32;
@@ -100,6 +118,35 @@ namespace LaptopHealth.ViewModels
             set => SetProperty(ref _lastActionText, value);
         }
 
+        // Recording and Playback Properties
+        private string _recordingTimerText = "00:00:00";
+        public string RecordingTimerText
+        {
+            get => _recordingTimerText;
+            set => SetProperty(ref _recordingTimerText, value);
+        }
+
+        private string _recordingStatusText = "Ready";
+        public string RecordingStatusText
+        {
+            get => _recordingStatusText;
+            set => SetProperty(ref _recordingStatusText, value);
+        }
+
+        private bool _isRecordingButtonEnabled = true;
+        public bool IsRecordingButtonEnabled
+        {
+            get => _isRecordingButtonEnabled;
+            set => SetProperty(ref _isRecordingButtonEnabled, value);
+        }
+
+        private bool _isPlaybackButtonEnabled = false;
+        public bool IsPlaybackButtonEnabled
+        {
+            get => _isPlaybackButtonEnabled;
+            set => SetProperty(ref _isPlaybackButtonEnabled, value);
+        }
+
         // Frequency band data (32 bands)
         private ObservableCollection<FrequencyBand> _frequencyBands = [];
         public ObservableCollection<FrequencyBand> FrequencyBands
@@ -108,12 +155,28 @@ namespace LaptopHealth.ViewModels
             set => SetProperty(ref _frequencyBands, value);
         }
 
+        private string _recordingButtonContent = "Start Recording";
+        public string RecordingButtonContent
+        {
+            get => _recordingButtonContent;
+            set => SetProperty(ref _recordingButtonContent, value);
+        }
+
+        private string _playbackButtonContent = "Start Playback";
+        public string PlaybackButtonContent
+        {
+            get => _playbackButtonContent;
+            set => SetProperty(ref _playbackButtonContent, value);
+        }
+
         #endregion
 
         #region Commands
 
         public ICommand StartStopMicrophoneCommand { get; }
         public ICommand RefreshDevicesCommand { get; }
+        public ICommand StartStopRecordingCommand { get; }
+        public ICommand StartStopPlaybackCommand { get; }
 
         #endregion
 
@@ -129,6 +192,9 @@ namespace LaptopHealth.ViewModels
                 FrequencyBands.Add(new FrequencyBand { BandIndex = i, Magnitude = 0 });
             }
 
+            // Initialize recording timer
+            InitializeRecordingTimer();
+
             // Initialize commands
             StartStopMicrophoneCommand = new AsyncRelayCommand(
                 async _ => await ToggleMicrophoneAsync(),
@@ -140,8 +206,53 @@ namespace LaptopHealth.ViewModels
                 _ => !_isCleanedUp
             );
 
+            StartStopRecordingCommand = new AsyncRelayCommand(
+                async _ => await ToggleRecordingAsync(),
+                _ => !_isCleanedUp && !_isPlaying
+            );
+
+            StartStopPlaybackCommand = new AsyncRelayCommand(
+                async _ => await TogglePlaybackAsync(),
+                _ => !_isCleanedUp && !_isRecording && _recordedAudio != null && _recordedAudio.Length > 0
+            );
+
             // Load devices
             _ = LoadAvailableDevicesAsync();
+        }
+
+        private void InitializeRecordingTimer()
+        {
+            _recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            _recordingTimer.Tick += OnRecordingTimerTick;
+        }
+
+        private void OnRecordingTimerTick(object? sender, EventArgs e)
+        {
+            if (_isRecording)
+                _recordingTime += TimeSpan.FromMilliseconds(100);
+            else if (_isPlaying && _waveFileReader != null)
+                _recordingTime = _waveFileReader.CurrentTime;
+
+            UpdateTimerDisplay();
+        }
+
+        private void UpdateTimerDisplay()
+        {
+            string timeString;
+            if (_isRecording)
+            {
+                timeString = _recordingTime.ToString(@"hh\:mm\:ss");
+            }
+            else if (_isPlaying && _waveFileReader != null)
+            {
+                timeString = _waveFileReader.CurrentTime.ToString(@"hh\:mm\:ss");
+            }
+            else
+            {
+                timeString = _recordingTime.ToString(@"hh\:mm\:ss");
+            }
+
+            RecordingTimerText = timeString;
         }
 
         #endregion
@@ -212,7 +323,29 @@ namespace LaptopHealth.ViewModels
             try
             {
                 // Cancel any ongoing operations
-                _currentOperationCts?.CancelAsync();
+                if (_currentOperationCts is not null)
+                {
+                    await _currentOperationCts.CancelAsync();
+                }
+
+                // Stop recording/playback if running
+                if (_isRecording)
+                {
+                    await StopRecordingAsync();
+                }
+
+                if (_isPlaying)
+                {
+                    await StopPlaybackAsync();
+                }
+
+                // Stop recording timer
+                if (_recordingTimer != null)
+                {
+                    _recordingTimer.Tick -= OnRecordingTimerTick;
+                    _recordingTimer.Stop();
+                    _recordingTimer = null;
+                }
 
                 // Stop microphone if running
                 if (_audioService.IsMicrophoneRunning)
@@ -222,19 +355,17 @@ namespace LaptopHealth.ViewModels
                 }
 
                 // Stop frequency capture if still running
-                if (_frequencyRenderTask?.IsCompleted == false)
+                var taskToWait = _frequencyRenderTask;
+                if (taskToWait?.IsCompleted == false)
                 {
                     LogDebug("Cancelling frequency capture during cleanup");
-                    if (_frequencyCapureTokenSource != null)
+                    if (_frequencyCaptureTokenSource is not null)
                     {
-                        await _frequencyCapureTokenSource.CancelAsync();
+                        await _frequencyCaptureTokenSource.CancelAsync();
                     }
 
-                    // Wait for frequency task to complete
-                    if (_frequencyRenderTask != null)
-                    {
-                        await Task.WhenAny(_frequencyRenderTask, Task.Delay(1000));
-                    }
+                    // Wait for frequency task to complete with timeout
+                    await Task.WhenAny(taskToWait, Task.Delay(CLEANUP_TIMEOUT_MS));
                 }
 
                 LogDebug("CleanupAsync completed successfully");
@@ -374,16 +505,19 @@ namespace LaptopHealth.ViewModels
 
         private async Task StopMicrophoneAsync(CancellationToken ct)
         {
+            // Store task reference to avoid race condition
+            var taskToWait = _frequencyRenderTask;
+            
             // Cancel frequency capture
-            if (_frequencyCapureTokenSource != null)
+            if (_frequencyCaptureTokenSource is not null)
             {
-                await _frequencyCapureTokenSource.CancelAsync();
+                await _frequencyCaptureTokenSource.CancelAsync();
             }
 
             // Wait for frequency task (with timeout)
-            if (_frequencyRenderTask != null && !_frequencyRenderTask.IsCompleted)
+            if (taskToWait != null && !taskToWait.IsCompleted)
             {
-                await Task.WhenAny(_frequencyRenderTask, Task.Delay(STOP_TIMEOUT_MS, ct));
+                await Task.WhenAny(taskToWait, Task.Delay(STOP_TIMEOUT_MS, ct));
             }
 
             ct.ThrowIfCancellationRequested();
@@ -395,8 +529,8 @@ namespace LaptopHealth.ViewModels
             ClearFrequencyVisualization();
 
             // Cleanup
-            _frequencyCapureTokenSource?.Dispose();
-            _frequencyCapureTokenSource = null;
+            _frequencyCaptureTokenSource?.Dispose();
+            _frequencyCaptureTokenSource = null;
             _frequencyRenderTask = null;
 
             UpdateUIForStoppedMicrophone();
@@ -440,6 +574,169 @@ namespace LaptopHealth.ViewModels
 
         #endregion
 
+        #region Recording and Playback
+
+        private async Task ToggleRecordingAsync()
+        {
+            if (_isRecording)
+                await StopRecordingAsync();
+            else
+                await StartRecordingAsync();
+        }
+
+        private async Task StartRecordingAsync()
+        {
+            try
+            {
+                _recordingTime = TimeSpan.Zero;
+                _recordingStream = new MemoryStream();
+                _waveInDevice = new WaveInEvent { WaveFormat = new WaveFormat(44100, 16, 2) };
+                _waveFileWriter = new WaveFileWriter(_recordingStream, _waveInDevice.WaveFormat);
+                _waveInDevice.DataAvailable += (_, e) => _waveFileWriter?.Write(e.Buffer, 0, e.BytesRecorded);
+                _waveInDevice.RecordingStopped += (_, _) => _waveInDevice?.Dispose();
+                _waveInDevice.StartRecording();
+                _isRecording = true;
+                _recordingTimer?.Start();
+                RecordingButtonContent = "Stop Recording";
+                IsPlaybackButtonEnabled = false;
+                RecordingStatusText = "Recording...";
+                LastActionText = "Recording started";
+
+                // Update command can-execute state
+                AsyncRelayCommand.RaiseCanExecuteChanged();
+            }
+            catch (Exception ex)
+            {
+                LogError("StartRecording", ex);
+                LastActionText = $"Error starting recording: {ex.Message}";
+            }
+        }
+
+        private async Task StopRecordingAsync()
+        {
+            _isRecording = false;
+            _recordingTimer?.Stop();
+            _waveInDevice?.StopRecording();
+            
+            if (_waveFileWriter is not null)
+            {
+                await _waveFileWriter.FlushAsync();
+                await _waveFileWriter.DisposeAsync();
+                _waveFileWriter = null;
+            }
+
+            // Save the recorded audio to byte array before disposing
+            if (_recordingStream is not null)
+            {
+                _recordedAudio = _recordingStream.ToArray();
+                await _recordingStream.DisposeAsync();
+                _recordingStream = null;
+            }
+
+            _waveInDevice?.Dispose();
+            _waveInDevice = null;
+
+            RecordingButtonContent = "Start Recording";
+            IsPlaybackButtonEnabled = _recordedAudio?.Length > 0;
+            RecordingStatusText = "Ready";
+            LastActionText = "Recording stopped";
+            
+            // Update command can-execute state
+            AsyncRelayCommand.RaiseCanExecuteChanged();
+        }
+
+        private async Task TogglePlaybackAsync()
+        {
+            if (_isPlaying)
+                await StopPlaybackAsync();
+            else
+                await StartPlaybackAsync();
+        }
+
+        private async Task StartPlaybackAsync()
+        {
+            try
+            {
+                if (_recordedAudio == null || _recordedAudio.Length == 0)
+                {
+                    LastActionText = "No recording available to play";
+                    return;
+                }
+
+                _waveOutDevice = new WaveOutEvent();
+                _playbackStream = new MemoryStream(_recordedAudio);
+                _waveFileReader = new WaveFileReader(_playbackStream);
+                _waveOutDevice.Init(_waveFileReader);
+                _waveOutDevice.PlaybackStopped += OnPlaybackStopped;
+                _waveOutDevice.Play();
+                _isPlaying = true;
+                _recordingTimer?.Start();
+                PlaybackButtonContent = "Stop Playback";
+                IsRecordingButtonEnabled = false;
+                RecordingStatusText = "Playing...";
+                LastActionText = "Playback started";
+                
+                // Update command can-execute state
+                AsyncRelayCommand.RaiseCanExecuteChanged();
+            }
+            catch (Exception ex)
+            {
+                LogError("StartPlayback", ex);
+                await StopPlaybackAsync();
+                LastActionText = $"Error starting playback: {ex.Message}";
+            }
+        }
+
+        private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+        {
+            Application.Current.Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    await StopPlaybackAsync();
+                }
+                catch (Exception ex)
+                {
+                    LogError("OnPlaybackStopped", ex);
+                }
+            });
+        }
+
+        private async Task StopPlaybackAsync()
+        {
+            _isPlaying = false;
+            _recordingTimer?.Stop();
+            
+            if (_waveOutDevice is not null)
+            {
+                _waveOutDevice.Stop();
+                _waveOutDevice.Dispose();
+                _waveOutDevice = null;
+            }
+
+            if (_waveFileReader is not null)
+            {
+                await _waveFileReader.DisposeAsync();
+                _waveFileReader = null;
+            }
+
+            if (_playbackStream is not null)
+            {
+                await _playbackStream.DisposeAsync();
+                _playbackStream = null;
+            }
+            
+            PlaybackButtonContent = "Start Playback";
+            IsRecordingButtonEnabled = true;
+            RecordingStatusText = "Ready";
+            LastActionText = "Playback stopped";
+            
+            // Update command can-execute state
+            AsyncRelayCommand.RaiseCanExecuteChanged();
+        }
+
+        #endregion
+
         #region Frequency Capture
 
         private void StartFrequencyCapture()
@@ -459,9 +756,9 @@ namespace LaptopHealth.ViewModels
 
         private void InitializeNewFrequencyCapture()
         {
-            _frequencyCapureTokenSource?.Dispose();
-            _frequencyCapureTokenSource = new CancellationTokenSource();
-            _frequencyRenderTask = CaptureFrequencyLoopAsync(_frequencyCapureTokenSource.Token);
+            _frequencyCaptureTokenSource?.Dispose();
+            _frequencyCaptureTokenSource = new CancellationTokenSource();
+            _frequencyRenderTask = CaptureFrequencyLoopAsync(_frequencyCaptureTokenSource.Token);
         }
 
         private async Task CaptureFrequencyLoopAsync(CancellationToken cancellationToken)
@@ -514,14 +811,14 @@ namespace LaptopHealth.ViewModels
 
         private async Task UpdateFrequencyBandsAsync(float[] frequencyData, CancellationToken cancellationToken)
         {
-            // Update UI on main thread
-            await Task.Run(() =>
+            // Update UI on main thread using Dispatcher
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 for (int i = 0; i < frequencyData.Length && i < FrequencyBands.Count; i++)
                 {
                     FrequencyBands[i].Magnitude = frequencyData[i];
                 }
-            }, cancellationToken);
+            }, DispatcherPriority.Normal, cancellationToken);
         }
 
         #endregion
@@ -620,7 +917,7 @@ namespace LaptopHealth.ViewModels
             IsRefreshButtonEnabled = false;
 
             // Cancel any in-progress operation
-            if (_currentOperationCts != null)
+            if (_currentOperationCts is not null)
             {
                 await _currentOperationCts.CancelAsync();
             }
@@ -699,10 +996,24 @@ namespace LaptopHealth.ViewModels
 
             if (disposing)
             {
-                // Dispose managed resources
-                _uiOperationLock.Dispose();
+                // Dispose managed resources - synchronous only
+                // Async cleanup should be done in CleanupAsync before disposal
+                _uiOperationLock?.Dispose();
                 _currentOperationCts?.Dispose();
-                _frequencyCapureTokenSource?.Dispose();
+                _frequencyCaptureTokenSource?.Dispose();
+                
+                if (_recordingTimer != null)
+                {
+                    _recordingTimer.Tick -= OnRecordingTimerTick;
+                    _recordingTimer.Stop();
+                }
+                
+                _waveInDevice?.Dispose();
+                _waveFileWriter?.Dispose();
+                _recordingStream?.Dispose();
+                _waveOutDevice?.Dispose();
+                _waveFileReader?.Dispose();
+                _playbackStream?.Dispose();
             }
 
             _disposed = true;
@@ -712,11 +1023,6 @@ namespace LaptopHealth.ViewModels
         {
             Dispose(true);
             GC.SuppressFinalize(this);
-        }
-
-        ~MicrophoneTestPageViewModel()
-        {
-            Dispose(false);
         }
 
         #endregion

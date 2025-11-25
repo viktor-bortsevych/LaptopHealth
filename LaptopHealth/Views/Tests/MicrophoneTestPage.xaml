@@ -6,7 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     mc:Ignorable="d" 
     d:DesignHeight="600" d:DesignWidth="900">
-    
+
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -16,7 +16,7 @@
                 <ResourceDictionary Source="pack://application:,,,/Resources/Styles/CommonStyles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
-            
+
             <!-- Value converter for frequency magnitude to bar height -->
             <local:FrequencyMagnitudeConverter x:Key="FrequencyMagnitudeConverter"/>
         </ResourceDictionary>
@@ -27,14 +27,16 @@
             <ColumnDefinition Width="2*"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-        
+
         <!-- Left Column: Frequency Visualizer -->
         <Grid Grid.Column="0" Margin="20">
             <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="2*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            
+
             <!-- Frequency Bars Visualization -->
             <Border Grid.Row="0"
                 Background="{StaticResource WhiteBrush}"
@@ -52,42 +54,49 @@
                                  Visibility="{Binding IsNoDevicesMessageVisible, Converter={StaticResource BoolToVisConverter}}">
                             <TextBlock Text="&#xE720;" 
                                       FontFamily="{StaticResource IconFontFamily}"
-                                      Foreground="{StaticResource WhiteBrush}"
+                                      Foreground="{StaticResource DarkGrayBrush}"
                                       FontSize="120"
                                       HorizontalAlignment="Center"
                                       VerticalAlignment="Center"
                                       Opacity="0.3"
                                       LineHeight="1"/>
                         </Viewbox>
-                        
-                        <!-- Frequency Bars Container -->
-                        <ItemsControl ItemsSource="{Binding FrequencyBands}"
-                                     HorizontalAlignment="Center"
-                                     VerticalAlignment="Center">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="32" Rows="1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="2" Height="250" Width="12">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="*"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-                                        
-                                        <!-- Animated Bar -->
-                                        <Border Grid.Row="1"
-                                                Background="{StaticResource PrimaryBrush}"
-                                                CornerRadius="2"
-                                                Opacity="0.9"
-                                                Height="{Binding Magnitude, Converter={StaticResource FrequencyMagnitudeConverter}}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        
+
+                        <!-- Frequency Bars Container with responsive sizing -->
+                        <Viewbox Stretch="Fill"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalAlignment="Stretch"
+                                 Margin="10">
+                            <Canvas Width="416" Height="250">
+                                <ItemsControl ItemsSource="{Binding FrequencyBands}"
+                                             HorizontalAlignment="Stretch"
+                                             VerticalAlignment="Stretch">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="32" Rows="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Width="416" Height="250"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="2" Height="250" Width="12">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <!-- Animated Bar -->
+                                                <Border Grid.Row="1"
+                                                        Background="{StaticResource PrimaryBrush}"
+                                                        CornerRadius="2"
+                                                        Opacity="0.9"
+                                                        Height="{Binding Magnitude, Converter={StaticResource FrequencyMagnitudeConverter}}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Canvas>
+                        </Viewbox>
+
                         <!-- Overlay Status Text -->
                         <TextBlock Text="{Binding MicrophoneStatusText}"
                                   Style="{StaticResource HeadlineText}"
@@ -100,9 +109,80 @@
                     </Grid>
                 </Border>
             </Border>
-            
-            <!-- Description -->
+
+            <!-- Recording and Playback Controls -->
             <Border Grid.Row="1" 
+                    Style="{StaticResource CardStyle}"
+                    Margin="0,16,0,16">
+                <StackPanel>
+                    <TextBlock Text="Recording &amp; Playback" 
+                              Style="{StaticResource HeadlineText}"
+                              FontSize="16"
+                              Margin="0,0,0,12"/>
+
+                    <!-- Recording Row -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0"
+                               Content="{Binding RecordingButtonContent}"
+                               Style="{StaticResource DefaultButtonStyle}"
+                               Height="40"
+                               Command="{Binding StartStopRecordingCommand}"
+                               IsEnabled="{Binding IsRecordingButtonEnabled}"
+                               MinWidth="140"/>
+
+                        <Border Grid.Column="1"
+                               Background="{StaticResource WhiteBrush}"
+                               BorderBrush="{StaticResource PrimaryBrush}"
+                               BorderThickness="1"
+                               CornerRadius="4"
+                               Padding="12,8"
+                               MinWidth="80"
+                               Margin="12,0,0,0">
+                            <TextBlock Text="{Binding RecordingTimerText}"
+                                      Style="{StaticResource BodyText}"
+                                      Foreground="{StaticResource PrimaryBrush}"
+                                      FontWeight="Medium"
+                                      TextAlignment="Center"
+                                      Margin="0"/>
+                        </Border>
+
+                        <Button Grid.Column="2"
+                               Content="{Binding PlaybackButtonContent}"
+                               Style="{StaticResource DefaultButtonStyle}"
+                               Height="40"
+                               Command="{Binding StartStopPlaybackCommand}"
+                               IsEnabled="{Binding IsPlaybackButtonEnabled}"
+                               MinWidth="140"
+                               Margin="12,0,0,0"/>
+
+                        <Border Grid.Column="3"
+                            Background="{StaticResource WhiteBrush}"
+                            BorderBrush="{StaticResource PrimaryBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12,8"
+                            MinWidth="100"
+                            Margin="12,0,0,0">
+                            <TextBlock Text="{Binding RecordingStatusText}"
+                                Style="{StaticResource BodyText}"
+                                Foreground="{StaticResource PrimaryBrush}"
+                                FontWeight="Medium"
+                                TextAlignment="Center"
+                                Margin="0"/>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Description -->
+            <Border Grid.Row="2" 
                     Style="{StaticResource CardStyle}"
                     Margin="0,16,0,0">
                 <StackPanel>
@@ -117,7 +197,7 @@
                 </StackPanel>
             </Border>
         </Grid>
-        
+
         <!-- Right Column: Controls -->
         <Grid Grid.Column="1" Margin="0,20,20,20">
             <Grid.RowDefinitions>
@@ -127,7 +207,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            
+
             <!-- Select Microphone Device Label -->
             <Border Grid.Row="0" 
                     Style="{StaticResource CardStyle}"
@@ -138,7 +218,7 @@
                           HorizontalAlignment="Center"
                           Margin="0"/>
             </Border>
-            
+
             <!-- Microphone Device ComboBox -->
             <Border Grid.Row="1" 
                     Style="{StaticResource CardStyle}"
@@ -163,7 +243,7 @@
                               TextAlignment="Center"/>
                 </StackPanel>
             </Border>
-            
+
             <!-- Start/Stop Button and Refresh Button -->
             <Border Grid.Row="2" 
                     Style="{StaticResource CardStyle}"
@@ -179,7 +259,7 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        
+
                         <Button Grid.Column="0"
                                Content="{Binding StartStopButtonContent}"
                                Style="{StaticResource DefaultButtonStyle}"
@@ -187,7 +267,7 @@
                                Command="{Binding StartStopMicrophoneCommand}"
                                IsEnabled="{Binding IsStartStopButtonEnabled}"
                                Margin="0,0,8,0"/>
-                        
+
                         <!-- Refresh Button using MDL2 Icon -->
                         <Button Grid.Column="1"
                                Content="&#xE72C;"
@@ -201,7 +281,7 @@
                     </Grid>
                 </StackPanel>
             </Border>
-            
+
             <!-- Last Action -->
             <Border Grid.Row="3" 
                     Style="{StaticResource CardStyle}"
