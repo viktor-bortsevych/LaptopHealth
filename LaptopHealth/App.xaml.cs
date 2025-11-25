@@ -3,6 +3,7 @@ using LaptopHealth.Infrastructure;
 using LaptopHealth.Services.Infrastructure;
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.Views;
+using LaptopHealth.Views.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System.Windows;
@@ -155,6 +156,10 @@ namespace LaptopHealth
                 var cameraService = ServiceProvider.GetService<ICameraService>();
                 cameraService?.SetCancellationToken(_applicationCts!.Token);
 
+                // Set cancellation token for audio service
+                var audioService = ServiceProvider.GetService<IAudioService>();
+                audioService?.SetCancellationToken(_applicationCts!.Token);
+
                 RegisterTestPages();
 
                 ShowMainWindow(loadingWindow);
@@ -208,6 +213,11 @@ namespace LaptopHealth
             TestRegistry.Register<CameraTestPage>(
                 "Camera Test",
                 "Tests camera device enumeration and control"
+            );
+
+            TestRegistry.Register<MicrophoneTestPage>(
+                "Microphone Test",
+                "Tests microphone device enumeration and real-time frequency visualization"
             );
         }
 
