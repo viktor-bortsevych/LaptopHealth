@@ -3,6 +3,17 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:LaptopHealth">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Font Resources -->
+                <ResourceDictionary Source="Resources/Styles/Fonts.xaml"/>
+                <!-- Color Resources -->
+                <ResourceDictionary Source="Resources/Styles/Colors.xaml"/>
+                <!-- Button Styles -->
+                <ResourceDictionary Source="Resources/Styles/ButtonStyles.xaml"/>
+                <!-- Common Styles -->
+                <ResourceDictionary Source="Resources/Styles/CommonStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

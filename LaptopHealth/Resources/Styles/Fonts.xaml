@@ -1,0 +1,18 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- Font Family Resources -->
+    <!-- Default font for general text -->
+    <FontFamily x:Key="DefaultFontFamily">Segoe UI</FontFamily>
+    
+    <!-- Custom Dongle font for navigation buttons -->
+    <!-- Using the full pack URI with filename to ensure it works in both design and runtime -->
+    <FontFamily x:Key="DongleFontFamily">pack://application:,,,/Resources/Fonts/Dongle-Regular.ttf#Dongle</FontFamily>
+    
+    <!-- Emoji font for proper emoji rendering -->
+    <FontFamily x:Key="EmojiFontFamily">Segoe UI Emoji, Segoe UI Symbol</FontFamily>
+    
+    <!-- MDL2 Assets for reliable Windows 10+ icons -->
+    <FontFamily x:Key="IconFontFamily">Segoe MDL2 Assets</FontFamily>
+    
+</ResourceDictionary>
