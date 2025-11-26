@@ -1,7 +1,6 @@
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels;
 using System.Windows.Controls;
-using System.Windows.Input;
 
 namespace LaptopHealth.Views.Tests
 {
@@ -22,15 +21,6 @@ namespace LaptopHealth.Views.Tests
         public async Task CleanupAsync()
         {
             await _viewModel.DisposeAsync();
-        }
-
-        private void ComboBox_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (sender is ComboBox comboBox &&
-                (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down) && (comboBox.IsDropDownOpen || comboBox.IsKeyboardFocusWithin))
-            {
-                e.Handled = true;
-            }
         }
     }
 }

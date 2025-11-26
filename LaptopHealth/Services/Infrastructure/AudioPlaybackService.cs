@@ -16,7 +16,8 @@ namespace LaptopHealth.Services.Infrastructure
 
         private string? _selectedDevice;
         private float _currentBalance;
-        private bool _isPlaying;
+        private volatile bool _isPlaying;
+        private volatile bool _isStopping;
         private bool _disposed;
 
         public event EventHandler? PlaybackStopped;
@@ -69,6 +70,7 @@ namespace LaptopHealth.Services.Infrastructure
                     _waveOut.Play();
 
                     _isPlaying = true;
+                    _isStopping = false;
                     return true;
                 }
                 catch (Exception ex)
@@ -107,6 +109,7 @@ namespace LaptopHealth.Services.Infrastructure
                     _waveOut.Play();
 
                     _isPlaying = true;
+                    _isStopping = false;
                     return true;
                 }
                 catch (Exception ex)
@@ -120,9 +123,34 @@ namespace LaptopHealth.Services.Infrastructure
 
         public void StopPlayback()
         {
+            if (_isStopping) return;
+
             lock (_lock)
             {
                 StopPlaybackInternal();
+            }
+        }
+
+        public async Task StopPlaybackAsync()
+        {
+            if (_isStopping) return;
+
+            _isStopping = true;
+
+            try
+            {
+                // Run the stop operation on a background thread to avoid blocking UI
+                await Task.Run(() =>
+                {
+                    lock (_lock)
+                    {
+                        StopPlaybackInternal();
+                    }
+                });
+            }
+            finally
+            {
+                _isStopping = false;
             }
         }
 
@@ -141,6 +169,7 @@ namespace LaptopHealth.Services.Infrastructure
 
         private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
         {
+            // Update state immediately
             _isPlaying = false;
 
             if (e.Exception != null)
@@ -148,14 +177,15 @@ namespace LaptopHealth.Services.Infrastructure
                 _logger.Error($"Playback error: {e.Exception.Message}");
             }
 
-            // Raise event on UI thread if needed
+            // Raise event on UI thread
             var handler = PlaybackStopped;
             if (handler != null)
             {
                 var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                if (dispatcher?.CheckAccess() == false)
+                if (dispatcher != null && !dispatcher.CheckAccess())
                 {
-                    dispatcher.BeginInvoke(handler, this, EventArgs.Empty);
+                    // Use BeginInvoke for async dispatch - don't block NAudio's thread
+                    dispatcher.BeginInvoke(() => handler.Invoke(this, EventArgs.Empty));
                 }
                 else
                 {
@@ -168,8 +198,20 @@ namespace LaptopHealth.Services.Infrastructure
         {
             if (_waveOut != null)
             {
-                _waveOut.PlaybackStopped -= OnPlaybackStopped;
-                _waveOut.Stop();
+                try
+                {
+                    _waveOut.PlaybackStopped -= OnPlaybackStopped;
+                    
+                    // Stop playback - this can potentially block briefly
+                    if (_waveOut.PlaybackState != PlaybackState.Stopped)
+                    {
+                        _waveOut.Stop();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Error stopping playback: {ex.Message}");
+                }
             }
 
             CleanupResources();

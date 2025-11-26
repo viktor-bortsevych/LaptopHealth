@@ -57,6 +57,9 @@ namespace LaptopHealth.Configuration
             services.AddScoped<IAudioService, AudioService>();
             services.AddScoped<IAudioPlaybackService, AudioPlaybackService>();
 
+            // UI services
+            services.AddSingleton<IDialogService, DialogService>();
+
             return services;
         }
 

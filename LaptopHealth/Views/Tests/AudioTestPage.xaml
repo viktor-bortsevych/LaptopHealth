@@ -3,6 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:behaviors="clr-namespace:LaptopHealth.Behaviors"
     mc:Ignorable="d" 
     d:DesignHeight="600" d:DesignWidth="900">
 
@@ -215,6 +216,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
                         <ComboBox Grid.Column="0"
@@ -223,8 +225,7 @@
                                   SelectedItem="{Binding SelectedTestAudio, Mode=TwoWay}"
                                   Height="40"
                                   Margin="0,0,8,0"
-                                  KeyDown="ComboBox_KeyDown"/>
-
+                                  behaviors:ComboBoxBehaviors.SuppressArrowKeys="True"/>
                         <Button Grid.Column="1"
                                 Content="+"
                                 Style="{StaticResource DefaultButtonStyle}"
@@ -236,7 +237,20 @@
                                 Padding="0,0,0,2"
                                 VerticalContentAlignment="Center"
                                 HorizontalContentAlignment="Center"
+                                Margin="0,0,8,0"
                                 ToolTip="Add audio file from your computer"/>
+                        <Button Grid.Column="2"
+                                Content="&#xE74D;"
+                                FontFamily="{StaticResource IconFontFamily}"
+                                Style="{StaticResource OutlineButtonStyle}"
+                                Command="{Binding DeleteAudioFileCommand}"
+                                Width="40"
+                                Height="40"
+                                FontSize="16"
+                                Padding="0"
+                                VerticalContentAlignment="Center"
+                                HorizontalContentAlignment="Center"
+                                ToolTip="Delete selected custom audio file"/>
                     </Grid>
                 </StackPanel>
             </Border>
@@ -245,6 +259,7 @@
         <!-- Right Column: Controls -->
         <Grid Grid.Column="1" Margin="0,20,20,20">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -285,7 +300,7 @@
                                   Height="40"
                                   Margin="0,0,8,0"
                                   IsEnabled="{Binding IsNotPlaying}"
-                                  KeyDown="ComboBox_KeyDown"/>
+                                  behaviors:ComboBoxBehaviors.SuppressArrowKeys="True"/>
                         
                         <!-- Refresh Button using MDL2 Icon -->
                         <Button Grid.Column="1"
@@ -312,13 +327,13 @@
                                Foreground="{StaticResource DarkGrayBrush}"
                                Margin="0,0,0,8"/>
                     
-                    <Button Content="Play Test Audio"
+                    <Button Content="{Binding PlayButtonContent}"
                             Style="{StaticResource DefaultButtonStyle}"
                             Command="{Binding PlayCommand}"
                             Height="44"
                             Margin="0,0,0,8"/>
 
-                    <Button Content="Stop"
+                    <Button Content="{Binding StopButtonContent}"
                             Style="{StaticResource OutlineButtonStyle}"
                             Command="{Binding StopCommand}"
                             Height="44"
@@ -352,6 +367,31 @@
                                    Foreground="{StaticResource SuccessBrush}"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Last Action -->
+            <Border Grid.Row="3" 
+                    Style="{StaticResource CardStyle}"
+                    Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="Last Action" 
+                               Style="{StaticResource BodyText}"
+                               FontSize="12"
+                               Foreground="{StaticResource DarkGrayBrush}"
+                               Margin="0,0,0,8"/>
+                    <Border Background="{StaticResource WhiteBrush}"
+                           BorderBrush="{StaticResource PrimaryBrush}"
+                           BorderThickness="1"
+                           CornerRadius="4"
+                           Padding="12,8">
+                        <TextBlock Text="{Binding LastActionText}"
+                                  Style="{StaticResource BodyText}"
+                                  Foreground="{StaticResource PrimaryBrush}"
+                                  TextWrapping="Wrap"
+                                  FontWeight="Medium"
+                                  Margin="0"/>
+                    </Border>
                 </StackPanel>
             </Border>
         </Grid>

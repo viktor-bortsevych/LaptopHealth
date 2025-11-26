@@ -1,6 +1,5 @@
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels.Infrastructure;
-using Microsoft.Win32;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Input;
@@ -11,6 +10,7 @@ namespace LaptopHealth.ViewModels
     {
         private const string FilePrefix = "File: ";
         private readonly IAudioPlaybackService _audioPlaybackService;
+        private readonly IDialogService _dialogService;
         private readonly ILogger _logger;
         private bool _disposed;
 
@@ -19,10 +19,17 @@ namespace LaptopHealth.ViewModels
         private double _stereoBalance;
         private bool _isPlaying;
         private bool _canStop = true;
+        private string _playButtonContent = "Play Test Audio";
+        private string _stopButtonContent = "Stop";
+        private string _lastActionText = "Ready to test audio output";
 
-        public AudioTestPageViewModel(IAudioPlaybackService audioPlaybackService, ILogger logger)
+        public AudioTestPageViewModel(
+            IAudioPlaybackService audioPlaybackService, 
+            IDialogService dialogService,
+            ILogger logger)
         {
             _audioPlaybackService = audioPlaybackService ?? throw new ArgumentNullException(nameof(audioPlaybackService));
+            _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             _audioPlaybackService.PlaybackStopped += OnPlaybackStopped;
@@ -33,10 +40,11 @@ namespace LaptopHealth.ViewModels
             PlayCommand = new RelayCommand(_ => PlayAudio(), _ => !IsPlaying && SelectedOutputDevice != null && SelectedTestAudio != null);
             StopCommand = new RelayCommand(_ => StopAudio(), _ => IsPlaying && CanStop);
             AddAudioFileCommand = new RelayCommand(_ => AddAudioFile());
-            SetBalanceLeftCommand = new RelayCommand(_ => StereoBalance = -1.0);
-            SetBalanceMidCommand = new RelayCommand(_ => StereoBalance = 0.0);
-            SetBalanceRightCommand = new RelayCommand(_ => StereoBalance = 1.0);
-            RefreshDevicesCommand = new RelayCommand(_ => LoadOutputDevices());
+            DeleteAudioFileCommand = new RelayCommand(_ => DeleteAudioFile(), _ => CanDeleteAudioFile);
+            SetBalanceLeftCommand = new RelayCommand(_ => SetBalanceLeft());
+            SetBalanceMidCommand = new RelayCommand(_ => SetBalanceMid());
+            SetBalanceRightCommand = new RelayCommand(_ => SetBalanceRight());
+            RefreshDevicesCommand = new RelayCommand(_ => RefreshDevices());
 
             LoadTestAudioOptions();
             LoadOutputDevices();
@@ -53,6 +61,7 @@ namespace LaptopHealth.ViewModels
                 if (SetProperty(ref _selectedOutputDevice, value) && value != null)
                 {
                     _audioPlaybackService.SelectOutputDevice(value);
+                    LastActionText = $"Selected output device: {value}";
                 }
             }
         }
@@ -60,8 +69,19 @@ namespace LaptopHealth.ViewModels
         public string? SelectedTestAudio
         {
             get => _selectedTestAudio;
-            set => SetProperty(ref _selectedTestAudio, value);
+            set
+            {
+                if (SetProperty(ref _selectedTestAudio, value) && value != null)
+                {
+                    LastActionText = $"Selected audio: {value}";
+                    OnPropertyChanged(nameof(CanDeleteAudioFile));
+                    CommandManager.InvalidateRequerySuggested();
+                }
+            }
         }
+
+        public bool CanDeleteAudioFile => !string.IsNullOrEmpty(SelectedTestAudio) && 
+                                           SelectedTestAudio.StartsWith(FilePrefix);
 
         public double StereoBalance
         {
@@ -71,6 +91,8 @@ namespace LaptopHealth.ViewModels
                 if (SetProperty(ref _stereoBalance, value))
                 {
                     _audioPlaybackService.SetStereoBalance((float)value);
+                    string position = value < -0.3 ? "Left" : value > 0.3 ? "Right" : "Center";
+                    LastActionText = $"Stereo balance set to: {position} ({value:F2})";
                 }
             }
         }
@@ -83,6 +105,7 @@ namespace LaptopHealth.ViewModels
                 if (SetProperty(ref _isPlaying, value))
                 {
                     OnPropertyChanged(nameof(IsNotPlaying));
+                    UpdateButtonContent();
                     CommandManager.InvalidateRequerySuggested();
                 }
             }
@@ -102,33 +125,81 @@ namespace LaptopHealth.ViewModels
             }
         }
 
+        public string PlayButtonContent
+        {
+            get => _playButtonContent;
+            set => SetProperty(ref _playButtonContent, value);
+        }
+
+        public string StopButtonContent
+        {
+            get => _stopButtonContent;
+            set => SetProperty(ref _stopButtonContent, value);
+        }
+
+        public string LastActionText
+        {
+            get => _lastActionText;
+            set => SetProperty(ref _lastActionText, value);
+        }
+
         public ICommand PlayCommand { get; }
         public ICommand StopCommand { get; }
         public ICommand AddAudioFileCommand { get; }
+        public ICommand DeleteAudioFileCommand { get; }
         public ICommand SetBalanceLeftCommand { get; }
         public ICommand SetBalanceMidCommand { get; }
         public ICommand SetBalanceRightCommand { get; }
         public ICommand RefreshDevicesCommand { get; }
 
+        private void UpdateButtonContent()
+        {
+            PlayButtonContent = IsPlaying ? "Playing..." : "Play Test Audio";
+            StopButtonContent = "Stop";
+        }
+
         private void OnPlaybackStopped(object? sender, EventArgs e)
         {
-            IsPlaying = false;
+            // Only update if we weren't manually stopping (avoid race conditions)
+            if (IsPlaying)
+            {
+                IsPlaying = false;
+                LastActionText = "Playback finished";
+            }
+        }
+
+        private void SetBalanceLeft()
+        {
+            StereoBalance = -1.0;
+        }
+
+        private void SetBalanceMid()
+        {
+            StereoBalance = 0.0;
+        }
+
+        private void SetBalanceRight()
+        {
+            StereoBalance = 1.0;
+        }
+
+        private void RefreshDevices()
+        {
+            LoadOutputDevices();
+            LastActionText = $"Refreshed devices - {OutputDevices.Count} device(s) found";
         }
 
         private void AddAudioFile()
         {
             try
             {
-                var openFileDialog = new OpenFileDialog
-                {
-                    Title = "Select Audio File",
-                    Filter = "Audio Files (*.mp3;*.wav)|*.mp3;*.wav|All Files (*.*)|*.*",
-                    Multiselect = false
-                };
+                string? sourceFile = _dialogService.OpenFileDialog(
+                    "Select Audio File",
+                    "Audio Files (*.mp3;*.wav)|*.mp3;*.wav|All Files (*.*)|*.*",
+                    false);
 
-                if (openFileDialog.ShowDialog() != true) return;
+                if (sourceFile == null) return;
 
-                string sourceFile = openFileDialog.FileName;
                 string fileName = Path.GetFileName(sourceFile);
                 string soundsDir = GetSoundsDirectory();
 
@@ -139,10 +210,44 @@ namespace LaptopHealth.ViewModels
 
                 LoadTestAudioOptions();
                 SelectedTestAudio = $"{FilePrefix}{Path.GetFileName(destFile)}";
+                LastActionText = $"Added custom audio file: {Path.GetFileName(destFile)}";
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to add audio file: {ex.Message}");
+                LastActionText = $"Failed to add audio file: {ex.Message}";
+            }
+        }
+
+        private void DeleteAudioFile()
+        {
+            if (string.IsNullOrEmpty(SelectedTestAudio) || !SelectedTestAudio.StartsWith(FilePrefix))
+                return;
+
+            try
+            {
+                string fileName = SelectedTestAudio[FilePrefix.Length..];
+                string filePath = Path.Combine(GetSoundsDirectory(), fileName);
+
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                    LastActionText = $"Deleted audio file: {fileName}";
+                    
+                    LoadTestAudioOptions();
+                    
+                    // Select first available option or clear selection
+                    SelectedTestAudio = TestAudioOptions.Count > 0 ? TestAudioOptions[0] : null;
+                }
+                else
+                {
+                    LastActionText = $"Audio file not found: {fileName}";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to delete audio file: {ex.Message}");
+                LastActionText = $"Failed to delete audio file: {ex.Message}";
             }
         }
 
@@ -236,33 +341,61 @@ namespace LaptopHealth.ViewModels
             if (SelectedTestAudio == null) return;
 
             bool success;
+            string audioDescription;
+
             if (SelectedTestAudio.StartsWith(FilePrefix))
             {
                 string fileName = SelectedTestAudio[FilePrefix.Length..];
                 string filePath = Path.Combine(GetSoundsDirectory(), fileName);
                 success = _audioPlaybackService.PlayAudioFile(filePath);
+                audioDescription = fileName;
             }
             else
             {
                 string audioType = GetAudioType(SelectedTestAudio);
                 success = _audioPlaybackService.PlayTestAudio(audioType);
+                audioDescription = SelectedTestAudio;
             }
 
             if (success)
             {
                 IsPlaying = true;
                 CanStop = false;
+                LastActionText = $"Playing: {audioDescription}";
                 
                 await Task.Delay(500);
                 
                 CanStop = true;
             }
+            else
+            {
+                LastActionText = $"Failed to play: {audioDescription}";
+            }
         }
 
-        private void StopAudio()
+        private async void StopAudio()
         {
-            _audioPlaybackService.StopPlayback();
-            IsPlaying = false;
+            try
+            {
+                // Immediately update UI state
+                IsPlaying = false;
+                CanStop = false;
+                LastActionText = "Stopping playback...";
+                
+                // Stop playback asynchronously to avoid UI freeze
+                await _audioPlaybackService.StopPlaybackAsync();
+                
+                LastActionText = "Playback stopped";
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error stopping audio: {ex.Message}");
+                LastActionText = $"Error stopping playback: {ex.Message}";
+            }
+            finally
+            {
+                CanStop = true;
+            }
         }
 
         private static string GetAudioType(string selection) => selection switch
@@ -281,12 +414,11 @@ namespace LaptopHealth.ViewModels
 
             if (disposing)
             {
-                // Dispose managed resources
                 _audioPlaybackService.PlaybackStopped -= OnPlaybackStopped;
+                
+                // Use sync version for synchronous dispose
                 _audioPlaybackService.StopPlayback();
             }
-
-            // Dispose unmanaged resources (if any)
 
             _disposed = true;
         }
@@ -302,9 +434,10 @@ namespace LaptopHealth.ViewModels
             if (_disposed)
                 return;
 
-            // Dispose managed resources asynchronously
             _audioPlaybackService.PlaybackStopped -= OnPlaybackStopped;
-            await Task.Run(() => _audioPlaybackService.StopPlayback());
+            
+            // Use async version for async dispose to avoid blocking
+            await _audioPlaybackService.StopPlaybackAsync();
 
             _disposed = true;
 

@@ -33,9 +33,14 @@ namespace LaptopHealth.Services.Interfaces
         bool PlayAudioFile(string filePath);
 
         /// <summary>
-        /// Stops audio playback
+        /// Stops audio playback synchronously (may block briefly)
         /// </summary>
         void StopPlayback();
+
+        /// <summary>
+        /// Stops audio playback asynchronously without blocking the UI thread
+        /// </summary>
+        Task StopPlaybackAsync();
 
         /// <summary>
         /// Sets the stereo balance
