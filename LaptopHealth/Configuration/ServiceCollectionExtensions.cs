@@ -55,6 +55,10 @@ namespace LaptopHealth.Configuration
             // Audio services
             services.AddScoped<IAudioHardwareService, AudioNAudioService>();
             services.AddScoped<IAudioService, AudioService>();
+            services.AddScoped<IAudioPlaybackService, AudioPlaybackService>();
+
+            // UI services
+            services.AddSingleton<IDialogService, DialogService>();
 
             return services;
         }
@@ -67,6 +71,7 @@ namespace LaptopHealth.Configuration
             services.AddTransient<MainWindowViewModel>();
             services.AddTransient<CameraTestPageViewModel>();
             services.AddTransient<MicrophoneTestPageViewModel>();
+            services.AddTransient<AudioTestPageViewModel>();
 
             return services;
         }
@@ -79,6 +84,7 @@ namespace LaptopHealth.Configuration
             services.AddTransient<MainWindow>();
             services.AddTransient<CameraTestPage>();
             services.AddTransient<MicrophoneTestPage>();
+            services.AddTransient<AudioTestPage>();
 
             return services;
         }
