@@ -1,4 +1,3 @@
-using LaptopHealth.Services.Infrastructure;
 using LaptopHealth.Services.Interfaces;
 
 namespace LaptopHealth.Services.Infrastructure
@@ -27,7 +26,7 @@ namespace LaptopHealth.Services.Infrastructure
         {
             logger.Info("Fetching available devices");
             _lastAction = "Fetched available devices";
-            
+
             return await hardwareService.GetAvailableDevicesAsync(_cancellationToken);
         }
 
@@ -47,9 +46,9 @@ namespace LaptopHealth.Services.Infrastructure
             }
 
             logger.Info($"Selecting device: {deviceName}");
-            
+
             var result = await hardwareService.InitializeDeviceAsync(deviceName, _cancellationToken);
-            
+
             if (result)
             {
                 _selectedDevice = deviceName;
@@ -82,16 +81,16 @@ namespace LaptopHealth.Services.Infrastructure
             }
 
             logger.Info($"Starting camera: {_selectedDevice}");
-            
+
             var result = await hardwareService.StartCaptureAsync(_cancellationToken);
-            
+
             _lastAction = result ? $"Started camera: {_selectedDevice}" : "Failed to start camera";
-            
+
             if (!result)
             {
                 logger.Error("Failed to start camera");
             }
-            
+
             return result;
         }
 
@@ -105,16 +104,16 @@ namespace LaptopHealth.Services.Infrastructure
             }
 
             logger.Info("Stopping camera");
-            
+
             var result = await hardwareService.StopCaptureAsync();
-            
+
             _lastAction = result ? "Stopped camera" : "Failed to stop camera";
-            
+
             if (!result)
             {
                 logger.Error("Failed to stop camera");
             }
-            
+
             return result;
         }
 

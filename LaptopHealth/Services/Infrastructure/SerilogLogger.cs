@@ -1,5 +1,3 @@
-using LaptopHealth.Services.Interfaces;
-using Serilog;
 using IApplicationLogger = LaptopHealth.Services.Interfaces.ILogger;
 
 namespace LaptopHealth.Services.Infrastructure

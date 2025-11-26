@@ -29,7 +29,7 @@ namespace LaptopHealth.Views.Tests
             LogInfo($"[MicrophoneTestPage] ViewModel hash: {_viewModel.GetHashCode()}");
 
             // Initialize when loaded
-            Loaded += async (s, e) => 
+            Loaded += async (s, e) =>
             {
                 LogInfo("[MicrophoneTestPage] Loaded event fired");
                 await _viewModel.InitializeAsync();

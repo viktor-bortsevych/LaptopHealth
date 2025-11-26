@@ -1,11 +1,11 @@
 ﻿using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels.Infrastructure;
-using System.Collections.ObjectModel;
-using System.Windows.Input;
 using NAudio.Wave;
-using System.Windows.Threading;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace LaptopHealth.ViewModels
 {
@@ -481,7 +481,7 @@ namespace LaptopHealth.ViewModels
         {
             // Store task reference to avoid race condition
             var taskToWait = _frequencyRenderTask;
-            
+
             // Cancel frequency capture
             if (_frequencyCaptureTokenSource is not null)
             {
@@ -569,18 +569,18 @@ namespace LaptopHealth.ViewModels
             try
             {
                 _recordingTime = TimeSpan.Zero;
-                
+
                 // Initialize all resources in local variables first
                 tempRecordingStream = new MemoryStream();
                 tempWaveInDevice = new WaveInEvent { WaveFormat = new WaveFormat(44100, 16, 2) };
                 tempWaveFileWriter = new WaveFileWriter(tempRecordingStream, tempWaveInDevice.WaveFormat);
-                
+
                 // Store local reference to avoid race condition with disposal
                 var writer = tempWaveFileWriter;
                 tempHandler = (_, e) => writer.Write(e.Buffer, 0, e.BytesRecorded);
                 tempWaveInDevice.DataAvailable += tempHandler;
                 tempWaveInDevice.RecordingStopped += (_, _) => tempWaveInDevice?.Dispose();
-                
+
                 // Start recording
                 tempWaveInDevice.StartRecording();
 
@@ -589,7 +589,7 @@ namespace LaptopHealth.ViewModels
                 _waveInDevice = tempWaveInDevice;
                 _waveFileWriter = tempWaveFileWriter;
                 _currentDataAvailableHandler = tempHandler;
-                
+
                 // Update state
                 UpdateMediaState(new MediaStateUpdate
                 {
@@ -599,7 +599,7 @@ namespace LaptopHealth.ViewModels
                     Status = "Recording...",
                     Action = "Recording started"
                 });
-                
+
                 _recordingTimer?.Start();
                 AsyncRelayCommand.RaiseCanExecuteChanged();
             }
@@ -615,17 +615,17 @@ namespace LaptopHealth.ViewModels
         {
             _isRecording = false;
             _recordingTimer?.Stop();
-            
+
             // Unsubscribe from event before stopping to prevent new events
             if (_waveInDevice != null && _currentDataAvailableHandler != null)
             {
                 _waveInDevice.DataAvailable -= _currentDataAvailableHandler;
                 _currentDataAvailableHandler = null;
             }
-            
+
             // Stop recording - this ensures no new events will fire
             _waveInDevice?.StopRecording();
-            
+
             if (_waveFileWriter is not null)
             {
                 await _waveFileWriter.FlushAsync();
@@ -651,7 +651,7 @@ namespace LaptopHealth.ViewModels
                 Status = "Ready",
                 Action = "Recording stopped"
             });
-            
+
             AsyncRelayCommand.RaiseCanExecuteChanged();
         }
 
@@ -682,7 +682,7 @@ namespace LaptopHealth.ViewModels
                 tempWaveOut = new WaveOutEvent();
                 tempPlaybackStream = new MemoryStream(_recordedAudio);
                 tempWaveFileReader = new WaveFileReader(tempPlaybackStream);
-                
+
                 // Initialize and start playback
                 tempWaveOut.Init(tempWaveFileReader);
                 tempWaveOut.PlaybackStopped += OnPlaybackStopped;
@@ -692,7 +692,7 @@ namespace LaptopHealth.ViewModels
                 _waveOutDevice = tempWaveOut;
                 _playbackStream = tempPlaybackStream;
                 _waveFileReader = tempWaveFileReader;
-                
+
                 // Update state
                 UpdateMediaState(new MediaStateUpdate
                 {
@@ -702,7 +702,7 @@ namespace LaptopHealth.ViewModels
                     Status = "Playing...",
                     Action = "Playback started"
                 });
-                
+
                 _recordingTimer?.Start();
                 AsyncRelayCommand.RaiseCanExecuteChanged();
             }
@@ -734,7 +734,7 @@ namespace LaptopHealth.ViewModels
         {
             _isPlaying = false;
             _recordingTimer?.Stop();
-            
+
             if (_waveOutDevice is not null)
             {
                 _waveOutDevice.Stop();
@@ -753,7 +753,7 @@ namespace LaptopHealth.ViewModels
                 await _playbackStream.DisposeAsync();
                 _playbackStream = null;
             }
-            
+
             UpdateMediaState(new MediaStateUpdate
             {
                 PlaybackButton = "Start Playback",
@@ -761,7 +761,7 @@ namespace LaptopHealth.ViewModels
                 Status = "Ready",
                 Action = "Playback stopped"
             });
-            
+
             AsyncRelayCommand.RaiseCanExecuteChanged();
         }
 
@@ -1090,7 +1090,7 @@ namespace LaptopHealth.ViewModels
             MemoryStream? playbackStream)
         {
             waveOut?.Dispose();
-            
+
             if (waveFileReader != null)
             {
                 await waveFileReader.DisposeAsync();

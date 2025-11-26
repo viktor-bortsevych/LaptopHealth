@@ -1,7 +1,6 @@
-using System.Windows;
-using System.Windows.Controls;
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels;
+using System.Windows.Controls;
 
 namespace LaptopHealth.Views
 {
@@ -30,7 +29,7 @@ namespace LaptopHealth.Views
             LogInfo($"[CameraTestPage] ViewModel hash: {_viewModel.GetHashCode()}");
 
             // Initialize when loaded
-            Loaded += async (s, e) => 
+            Loaded += async (s, e) =>
             {
                 LogInfo("[CameraTestPage] Loaded event fired");
                 await _viewModel.InitializeAsync();

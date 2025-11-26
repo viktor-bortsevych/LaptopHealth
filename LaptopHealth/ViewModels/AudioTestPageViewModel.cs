@@ -24,7 +24,7 @@ namespace LaptopHealth.ViewModels
         private string _lastActionText = "Ready to test audio output";
 
         public AudioTestPageViewModel(
-            IAudioPlaybackService audioPlaybackService, 
+            IAudioPlaybackService audioPlaybackService,
             IDialogService dialogService,
             ILogger logger)
         {
@@ -88,7 +88,7 @@ namespace LaptopHealth.ViewModels
             }
         }
 
-        public bool CanDeleteAudioFile => !string.IsNullOrEmpty(SelectedTestAudio) && 
+        public bool CanDeleteAudioFile => !string.IsNullOrEmpty(SelectedTestAudio) &&
                                            SelectedTestAudio.StartsWith(FilePrefix);
 
         public double StereoBalance
@@ -241,9 +241,9 @@ namespace LaptopHealth.ViewModels
                 {
                     File.Delete(filePath);
                     LastActionText = $"Deleted audio file: {fileName}";
-                    
+
                     LoadTestAudioOptions();
-                    
+
                     // Select first available option or clear selection
                     SelectedTestAudio = TestAudioOptions.Count > 0 ? TestAudioOptions[0] : null;
                 }
@@ -370,9 +370,9 @@ namespace LaptopHealth.ViewModels
                 IsPlaying = true;
                 CanStop = false;
                 LastActionText = $"Playing: {audioDescription}";
-                
+
                 await Task.Delay(500);
-                
+
                 CanStop = true;
             }
             else
@@ -389,10 +389,10 @@ namespace LaptopHealth.ViewModels
                 IsPlaying = false;
                 CanStop = false;
                 LastActionText = "Stopping playback...";
-                
+
                 // Stop playback asynchronously to avoid UI freeze
                 await _audioPlaybackService.StopPlaybackAsync();
-                
+
                 LastActionText = "Playback stopped";
             }
             catch (Exception ex)

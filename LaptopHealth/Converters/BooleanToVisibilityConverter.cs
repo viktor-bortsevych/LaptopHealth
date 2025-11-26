@@ -25,7 +25,7 @@ namespace LaptopHealth.Converters
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
             bool inverse = parameter is string param && param.Equals("Inverse", StringComparison.OrdinalIgnoreCase);
-            
+
             if (value is Visibility visibility)
             {
                 bool isVisible = visibility == Visibility.Visible;

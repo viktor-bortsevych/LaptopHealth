@@ -1,9 +1,9 @@
+using LaptopHealth.Services.Interfaces;
+using LaptopHealth.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using LaptopHealth.Services.Interfaces;
-using LaptopHealth.ViewModels;
 
 namespace LaptopHealth.Views
 {
@@ -87,7 +87,7 @@ namespace LaptopHealth.Views
             for (int i = 0; i < childCount; i++)
             {
                 var child = VisualTreeHelper.GetChild(parent, i);
-                
+
                 if (child is Button button && button.Tag is string tagString && Enum.TryParse<Key>(tagString, out var key))
                 {
                     _keyButtonMap[key] = button;
@@ -101,22 +101,22 @@ namespace LaptopHealth.Views
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             var actualKey = e.Key == Key.System ? e.SystemKey : e.Key;
-            
+
             LogDebug($"[KeyboardTestPage] Key down: {actualKey}");
             _viewModel.HandleKeyDown(e.Key, e.SystemKey);
             SetKeyPressed(actualKey, true);
-            
+
             e.Handled = true;
         }
 
         private void OnPreviewKeyUp(object sender, KeyEventArgs e)
         {
             var actualKey = e.Key == Key.System ? e.SystemKey : e.Key;
-            
+
             LogDebug($"[KeyboardTestPage] Key up: {actualKey}");
             _viewModel.HandleKeyUp(e.Key, e.SystemKey);
             SetKeyPressed(actualKey, false);
-            
+
             e.Handled = true;
         }
 
@@ -128,7 +128,7 @@ namespace LaptopHealth.Views
                 {
                     // Mark as tested
                     _testedKeys.Add(key);
-                    
+
                     // State: Currently Pressed (Outline style with primary color)
                     button.Background = Brushes.Transparent;
                     button.BorderBrush = _primaryBrush;

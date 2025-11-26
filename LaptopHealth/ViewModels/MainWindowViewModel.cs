@@ -1,13 +1,13 @@
 using LaptopHealth.Services.Infrastructure;
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace LaptopHealth.ViewModels
 {
@@ -318,7 +318,7 @@ namespace LaptopHealth.ViewModels
             Type pageType)
         {
             LogDebug($"MainWindowViewModel: LoadTestPageAsync - pageType: {pageType.Name}");
-            
+
             try
             {
                 // Cleanup old page before loading new one
