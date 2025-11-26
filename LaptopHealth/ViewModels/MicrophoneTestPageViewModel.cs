@@ -305,7 +305,9 @@ namespace LaptopHealth.ViewModels
             }
 
             _isCleanedUp = true;
+            LogDebug("===============================================================================");
             LogDebug("CleanupAsync starting");
+            LogDebug($"Instance hash: {GetHashCode()}");
 
             try
             {
@@ -313,29 +315,38 @@ namespace LaptopHealth.ViewModels
                 if (_currentOperationCts is not null)
                 {
                     await _currentOperationCts.CancelAsync();
+                    LogDebug("Current operation cancelled");
                 }
 
                 // Stop recording/playback if running
                 await StopMediaOperationsAsync();
+                LogDebug("Media operations stopped");
 
                 // Stop recording timer
                 CleanupRecordingTimer();
+                LogDebug("Recording timer cleaned up");
 
                 // Stop microphone if running
                 if (_audioService.IsMicrophoneRunning)
                 {
                     LogDebug("Stopping microphone during cleanup");
                     await StopMicrophoneAsync(CancellationToken.None);
+                    LogDebug("Microphone stopped");
                 }
 
                 // Stop frequency capture if still running
                 await StopFrequencyCaptureAsync();
+                LogDebug("Frequency capture stopped");
 
                 LogDebug("CleanupAsync completed successfully");
             }
             catch (Exception ex)
             {
                 LogError("CleanupAsync", ex);
+            }
+            finally
+            {
+                LogDebug("===============================================================================");
             }
         }
 
@@ -1110,31 +1121,63 @@ namespace LaptopHealth.ViewModels
         protected virtual void Dispose(bool disposing)
         {
             if (_disposed)
+            {
+                LogDebug("Dispose already called, skipping");
                 return;
+            }
+
+            LogDebug("===============================================================================");
+            LogDebug("Dispose called");
+            LogDebug($"Instance hash: {GetHashCode()}");
+            LogDebug($"Disposing: {disposing}");
 
             if (disposing)
             {
+                // Dispose managed resources
+                LogDebug("Disposing UI operation lock");
                 _uiOperationLock?.Dispose();
+
+                LogDebug("Disposing current operation CTS");
                 _currentOperationCts?.Dispose();
+
+                LogDebug("Disposing frequency capture token source");
                 _frequencyCaptureTokenSource?.Dispose();
-                
+
+                LogDebug("Disposing recording timer");
                 CleanupRecordingTimer();
-                
+
+                LogDebug("Disposing wave in device (NAudio COM)");
                 _waveInDevice?.Dispose();
+
+                LogDebug("Disposing wave file writer");
                 _waveFileWriter?.Dispose();
+
+                LogDebug("Disposing recording stream");
                 _recordingStream?.Dispose();
+
+                LogDebug("Disposing wave out device (NAudio COM)");
                 _waveOutDevice?.Dispose();
+
+                LogDebug("Disposing wave file reader");
                 _waveFileReader?.Dispose();
+
+                LogDebug("Disposing playback stream");
                 _playbackStream?.Dispose();
+
+                LogDebug("All managed resources disposed");
             }
 
             _disposed = true;
+            LogDebug("Dispose completed");
+            LogDebug("===============================================================================");
         }
 
         public void Dispose()
         {
+            LogDebug("Dispose() method called");
             Dispose(true);
             GC.SuppressFinalize(this);
+            LogDebug("GC.SuppressFinalize called");
         }
 
         #endregion

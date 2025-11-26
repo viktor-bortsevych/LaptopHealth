@@ -16,13 +16,26 @@ namespace LaptopHealth.Views.Tests
 
         public MicrophoneTestPage(MicrophoneTestPageViewModel viewModel)
         {
+            LogInfo("[MicrophoneTestPage] Constructor called");
+            LogInfo($"[MicrophoneTestPage] Instance hash: {GetHashCode()}");
+
             InitializeComponent();
 
             _viewModel = viewModel;
             DataContext = _viewModel;
 
+            LogInfo("[MicrophoneTestPage] DataContext set");
+            LogInfo($"[MicrophoneTestPage] ViewModel type: {_viewModel.GetType().Name}");
+            LogInfo($"[MicrophoneTestPage] ViewModel hash: {_viewModel.GetHashCode()}");
+
             // Initialize when loaded
-            Loaded += async (s, e) => await _viewModel.InitializeAsync();
+            Loaded += async (s, e) => 
+            {
+                LogInfo("[MicrophoneTestPage] Loaded event fired");
+                await _viewModel.InitializeAsync();
+            };
+
+            LogInfo("[MicrophoneTestPage] Constructor completed");
         }
 
         /// <summary>
@@ -30,8 +43,46 @@ namespace LaptopHealth.Views.Tests
         /// </summary>
         public async Task CleanupAsync()
         {
-            await _viewModel.CleanupAsync();
-            _viewModel.Dispose();
+            LogInfo("[MicrophoneTestPage] ===============================================================================");
+            LogInfo("[MicrophoneTestPage] CleanupAsync called");
+            LogInfo($"[MicrophoneTestPage] Instance hash: {GetHashCode()}");
+            LogInfo($"[MicrophoneTestPage] ViewModel hash: {_viewModel.GetHashCode()}");
+
+            try
+            {
+                LogInfo("[MicrophoneTestPage] Calling ViewModel.CleanupAsync");
+                await _viewModel.CleanupAsync();
+                LogInfo("[MicrophoneTestPage] ViewModel.CleanupAsync completed");
+
+                LogInfo("[MicrophoneTestPage] Calling ViewModel.Dispose");
+                _viewModel.Dispose();
+                LogInfo("[MicrophoneTestPage] ViewModel.Dispose completed");
+
+                LogInfo("[MicrophoneTestPage] CleanupAsync completed successfully");
+            }
+            catch (Exception ex)
+            {
+                LogError("[MicrophoneTestPage] Error during CleanupAsync", ex);
+            }
+            finally
+            {
+                LogInfo("[MicrophoneTestPage] ===============================================================================");
+            }
         }
+
+        #region Logging
+
+        private static void LogInfo(string message)
+        {
+            System.Diagnostics.Debug.WriteLine(message);
+        }
+
+        private static void LogError(string message, Exception ex)
+        {
+            string fullMessage = $"{message}: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine(fullMessage);
+        }
+
+        #endregion
     }
 }

@@ -6,7 +6,7 @@ using System.Windows.Input;
 
 namespace LaptopHealth.ViewModels
 {
-    public class AudioTestPageViewModel : ViewModelBase, IDisposable, IAsyncDisposable
+    public class AudioTestPageViewModel : ViewModelBase, IAsyncDisposable
     {
         private const string FilePrefix = "File: ";
         private readonly IAudioPlaybackService _audioPlaybackService;
@@ -32,22 +32,30 @@ namespace LaptopHealth.ViewModels
             _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-            _audioPlaybackService.PlaybackStopped += OnPlaybackStopped;
+            try
+            {
+                _audioPlaybackService.PlaybackStopped += OnPlaybackStopped;
 
-            OutputDevices = [];
-            TestAudioOptions = [];
+                OutputDevices = [];
+                TestAudioOptions = [];
 
-            PlayCommand = new RelayCommand(_ => PlayAudio(), _ => !IsPlaying && SelectedOutputDevice != null && SelectedTestAudio != null);
-            StopCommand = new RelayCommand(_ => StopAudio(), _ => IsPlaying && CanStop);
-            AddAudioFileCommand = new RelayCommand(_ => AddAudioFile());
-            DeleteAudioFileCommand = new RelayCommand(_ => DeleteAudioFile(), _ => CanDeleteAudioFile);
-            SetBalanceLeftCommand = new RelayCommand(_ => SetBalanceLeft());
-            SetBalanceMidCommand = new RelayCommand(_ => SetBalanceMid());
-            SetBalanceRightCommand = new RelayCommand(_ => SetBalanceRight());
-            RefreshDevicesCommand = new RelayCommand(_ => RefreshDevices());
+                PlayCommand = new AsyncRelayCommand(_ => PlayAudio(), _ => !IsPlaying && SelectedOutputDevice != null && SelectedTestAudio != null);
+                StopCommand = new AsyncRelayCommand(_ => StopAudio(), _ => IsPlaying && CanStop);
+                AddAudioFileCommand = new RelayCommand(_ => AddAudioFile());
+                DeleteAudioFileCommand = new RelayCommand(_ => DeleteAudioFile(), _ => CanDeleteAudioFile);
+                SetBalanceLeftCommand = new RelayCommand(_ => SetBalanceLeft());
+                SetBalanceMidCommand = new RelayCommand(_ => SetBalanceMid());
+                SetBalanceRightCommand = new RelayCommand(_ => SetBalanceRight());
+                RefreshDevicesCommand = new RelayCommand(_ => RefreshDevices());
 
-            LoadTestAudioOptions();
-            LoadOutputDevices();
+                LoadTestAudioOptions();
+                LoadOutputDevices();
+            }
+            catch
+            {
+                _audioPlaybackService.PlaybackStopped -= OnPlaybackStopped;
+                throw;
+            }
         }
 
         public ObservableCollection<string> OutputDevices { get; }
@@ -91,7 +99,7 @@ namespace LaptopHealth.ViewModels
                 if (SetProperty(ref _stereoBalance, value))
                 {
                     _audioPlaybackService.SetStereoBalance((float)value);
-                    string position = value < -0.3 ? "Left" : value > 0.3 ? "Right" : "Center";
+                    string position = GetBalancePosition(value);
                     LastActionText = $"Stereo balance set to: {position} ({value:F2})";
                 }
             }
@@ -336,7 +344,7 @@ namespace LaptopHealth.ViewModels
             }
         }
 
-        private async void PlayAudio()
+        private async Task PlayAudio()
         {
             if (SelectedTestAudio == null) return;
 
@@ -373,7 +381,7 @@ namespace LaptopHealth.ViewModels
             }
         }
 
-        private async void StopAudio()
+        private async Task StopAudio()
         {
             try
             {
@@ -407,41 +415,66 @@ namespace LaptopHealth.ViewModels
             _ => "sine440"
         };
 
-        protected virtual void Dispose(bool disposing)
+        private static string GetBalancePosition(double value)
         {
-            if (_disposed)
-                return;
-
-            if (disposing)
-            {
-                _audioPlaybackService.PlaybackStopped -= OnPlaybackStopped;
-                
-                // Use sync version for synchronous dispose
-                _audioPlaybackService.StopPlayback();
-            }
-
-            _disposed = true;
+            if (value < -0.3)
+                return "Left";
+            if (value > 0.3)
+                return "Right";
+            return "Center";
         }
 
-        public void Dispose()
+        protected virtual async ValueTask DisposeAsyncCore()
         {
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
+            if (_disposed)
+            {
+                LogDebug("[AudioTestPageViewModel] DisposeAsyncCore called but already disposed, skipping");
+                return;
+            }
+
+            LogDebug("[AudioTestPageViewModel] ===============================================================================");
+            LogDebug("[AudioTestPageViewModel] DisposeAsyncCore called");
+            LogDebug($"[AudioTestPageViewModel] Instance hash: {GetHashCode()}");
+
+            try
+            {
+                LogDebug("[AudioTestPageViewModel] Unsubscribing from PlaybackStopped event");
+                _audioPlaybackService.PlaybackStopped -= OnPlaybackStopped;
+
+                LogDebug("[AudioTestPageViewModel] Calling StopPlaybackAsync");
+                await _audioPlaybackService.StopPlaybackAsync().ConfigureAwait(false);
+                LogDebug("[AudioTestPageViewModel] StopPlaybackAsync completed");
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"[AudioTestPageViewModel] Error during cleanup: {ex.Message}");
+            }
+            finally
+            {
+                _disposed = true;
+                LogDebug("[AudioTestPageViewModel] DisposeAsyncCore completed");
+                LogDebug("[AudioTestPageViewModel] ===============================================================================");
+            }
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (_disposed)
-                return;
+            LogDebug("[AudioTestPageViewModel] DisposeAsync() method called");
 
-            _audioPlaybackService.PlaybackStopped -= OnPlaybackStopped;
-            
-            // Use async version for async dispose to avoid blocking
-            await _audioPlaybackService.StopPlaybackAsync();
-
-            _disposed = true;
+            await DisposeAsyncCore().ConfigureAwait(false);
 
             GC.SuppressFinalize(this);
+
+            LogDebug("[AudioTestPageViewModel] DisposeAsync() completed");
         }
+
+        #region Logging
+
+        private static void LogDebug(string message)
+        {
+            System.Diagnostics.Debug.WriteLine(message);
+        }
+
+        #endregion
     }
 }

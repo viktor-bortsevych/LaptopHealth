@@ -109,14 +109,25 @@ namespace LaptopHealth.ViewModels
             // Load tests from registry
             _testPages = TestRegistry.RegisteredTests;
 
+            LogInfo("===============================================================================");
+            LogInfo("MainWindowViewModel: Initialization started");
+            LogInfo($"MainWindowViewModel: Total registered tests: {_testPages.Count}");
+
             if (_testPages.Count == 0)
             {
+                LogError("MainWindowViewModel: No tests registered. Please check your configuration.");
                 ShowError("No tests registered. Please check your configuration.");
                 PreviousCommand = new AsyncRelayCommand(_ => Task.CompletedTask, _ => false);
                 NextCommand = new AsyncRelayCommand(_ => Task.CompletedTask, _ => false);
                 NavigateToTestCommand = new AsyncRelayCommand(_ => Task.CompletedTask, _ => false);
                 KeyNavigationCommand = new AsyncRelayCommand(_ => Task.CompletedTask, _ => false);
                 return;
+            }
+
+            // Log registered tests
+            for (int i = 0; i < _testPages.Count; i++)
+            {
+                LogDebug($"MainWindowViewModel: Test {i}: {_testPages[i].Name} (Type: {_testPages[i].PageType.Name})");
             }
 
             // Initialize commands
@@ -142,6 +153,7 @@ namespace LaptopHealth.ViewModels
 
             // Initialize progress indicators
             InitializeProgressIndicators();
+            LogInfo("MainWindowViewModel: Initialization completed");
         }
 
         /// <summary>
@@ -149,10 +161,13 @@ namespace LaptopHealth.ViewModels
         /// </summary>
         public async Task InitializeAsync()
         {
+            LogInfo("MainWindowViewModel.InitializeAsync: Starting");
             if (_testPages.Count > 0 && CurrentTestPage == null)
             {
+                LogInfo("MainWindowViewModel.InitializeAsync: Loading first test (index 0)");
                 await LoadTestAsync(0);
             }
+            LogInfo("MainWindowViewModel.InitializeAsync: Completed");
         }
 
         /// <summary>
@@ -160,6 +175,7 @@ namespace LaptopHealth.ViewModels
         /// </summary>
         private void InitializeProgressIndicators()
         {
+            LogDebug("MainWindowViewModel: Initializing progress indicators");
             var primaryBrush = (Brush)Application.Current.FindResource("PrimaryBrush");
             var inactiveBrush = (Brush)Application.Current.FindResource("InactiveIndicatorBrush");
 
@@ -172,6 +188,7 @@ namespace LaptopHealth.ViewModels
                 };
 
                 ProgressIndicators.Add(indicator);
+                LogDebug($"MainWindowViewModel: Created progress indicator {i} for {_testPages[i].Name}");
             }
         }
 
@@ -180,6 +197,7 @@ namespace LaptopHealth.ViewModels
         /// </summary>
         private async Task NavigateToTestAsync(int testIndex)
         {
+            LogInfo($"MainWindowViewModel: NavigateToTestAsync called for index {testIndex}");
             await LoadTestAsync(testIndex);
         }
 
@@ -188,6 +206,7 @@ namespace LaptopHealth.ViewModels
         /// </summary>
         private async Task NavigateToPreviousAsync()
         {
+            LogInfo($"MainWindowViewModel: NavigateToPreviousAsync - current index: {CurrentTestIndex}");
             if (CanNavigatePrevious)
             {
                 await LoadTestAsync(CurrentTestIndex - 1);
@@ -199,6 +218,7 @@ namespace LaptopHealth.ViewModels
         /// </summary>
         private async Task NavigateToNextAsync()
         {
+            LogInfo($"MainWindowViewModel: NavigateToNextAsync - current index: {CurrentTestIndex}");
             if (CanNavigateNext)
             {
                 await LoadTestAsync(CurrentTestIndex + 1);
@@ -217,6 +237,7 @@ namespace LaptopHealth.ViewModels
             {
                 case Key.Left:
                 case Key.Up:
+                    LogDebug($"MainWindowViewModel: Keyboard navigation - {e.Key} key pressed");
                     if (CanNavigatePrevious)
                     {
                         await NavigateToPreviousAsync();
@@ -226,6 +247,7 @@ namespace LaptopHealth.ViewModels
 
                 case Key.Right:
                 case Key.Down:
+                    LogDebug($"MainWindowViewModel: Keyboard navigation - {e.Key} key pressed");
                     if (CanNavigateNext)
                     {
                         await NavigateToNextAsync();
@@ -242,30 +264,49 @@ namespace LaptopHealth.ViewModels
         {
             // Prevent duplicate navigation and concurrent navigation
             if (testIndex < 0 || testIndex >= _testPages.Count || _isNavigating)
+            {
+                LogDebug($"MainWindowViewModel: LoadTestAsync skipped - invalid index or already navigating");
                 return;
+            }
 
             // Prevent navigating to the same page
             if (testIndex == CurrentTestIndex && CurrentTestPage != null)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainWindowViewModel] Already on page {testIndex}, skipping navigation");
+                LogDebug($"MainWindowViewModel: Already on page {testIndex}, skipping navigation");
                 return;
             }
+
+            LogInfo($"===============================================================================");
+            LogInfo($"MainWindowViewModel: LoadTestAsync starting - target index: {testIndex}");
+            LogInfo($"MainWindowViewModel: Current index: {CurrentTestIndex}");
+            LogInfo($"MainWindowViewModel: Current page type: {CurrentTestPage?.GetType().Name ?? "null"}");
 
             _isNavigating = true;
 
             try
             {
                 var testInfo = _testPages[testIndex];
+                LogInfo($"MainWindowViewModel: Test to load: {testInfo.Name} (Type: {testInfo.PageType.Name})");
 
                 await LoadTestPageAsync(testInfo.PageType);
 
                 CurrentTestIndex = testIndex;
                 HasError = false;
+
+                LogInfo($"MainWindowViewModel: Successfully loaded page {testIndex}");
+                LogInfo($"MainWindowViewModel: Current page type: {CurrentTestPage?.GetType().Name ?? "null"}");
+            }
+            catch (Exception ex)
+            {
+                LogError($"MainWindowViewModel: LoadTestAsync failed - {ex.Message}");
+                ShowError($"Failed to load test: {ex.Message}");
             }
             finally
             {
                 _isNavigating = false;
                 UpdateNavigationButtonStates();
+                LogInfo($"MainWindowViewModel: LoadTestAsync completed");
+                LogInfo($"===============================================================================");
             }
         }
 
@@ -276,23 +317,30 @@ namespace LaptopHealth.ViewModels
             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
             Type pageType)
         {
+            LogDebug($"MainWindowViewModel: LoadTestPageAsync - pageType: {pageType.Name}");
+            
             try
             {
                 // Cleanup old page before loading new one
+                LogDebug($"MainWindowViewModel: Unloading old page before loading new one");
                 await UnloadCurrentTestPageAsync();
 
+                LogDebug($"MainWindowViewModel: Creating instance of {pageType.Name}");
                 if (_serviceProvider.GetRequiredService(pageType) is UserControl testPage)
                 {
+                    LogInfo($"MainWindowViewModel: Successfully created instance of {pageType.Name}");
+                    LogDebug($"MainWindowViewModel: Instance type: {testPage.GetType().FullName}");
                     CurrentTestPage = testPage;
                 }
                 else
                 {
+                    LogError($"MainWindowViewModel: Failed to create instance of {pageType.Name} - not a UserControl");
                     ShowError($"Failed to create instance of {pageType.Name}");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error loading test page: {ex.Message}");
+                LogError($"MainWindowViewModel: Error loading test page - {ex.Message}");
                 ShowError($"Failed to load test page: {ex.Message}");
             }
         }
@@ -303,35 +351,54 @@ namespace LaptopHealth.ViewModels
         private async Task UnloadCurrentTestPageAsync()
         {
             if (CurrentTestPage == null)
+            {
+                LogDebug($"MainWindowViewModel: UnloadCurrentTestPageAsync - no page to unload");
                 return;
+            }
 
             var oldPage = CurrentTestPage;
-            System.Diagnostics.Debug.WriteLine($"[MainWindowViewModel] Unloading page: {oldPage.GetType().Name}");
+            LogInfo($"MainWindowViewModel: UnloadCurrentTestPageAsync starting - page type: {oldPage.GetType().Name}");
+            LogDebug($"MainWindowViewModel: Page instance hash code: {oldPage.GetHashCode()}");
 
             // If page implements ITestPage, call its async cleanup method
             if (oldPage is ITestPage testPage)
             {
                 try
                 {
+                    LogDebug($"MainWindowViewModel: Calling CleanupAsync on {oldPage.GetType().Name}");
                     await testPage.CleanupAsync();
-                    System.Diagnostics.Debug.WriteLine($"[MainWindowViewModel] CleanupAsync completed for {oldPage.GetType().Name}");
+                    LogInfo($"MainWindowViewModel: CleanupAsync completed for {oldPage.GetType().Name}");
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MainWindowViewModel] Error during CleanupAsync: {ex.Message}");
+                    LogError($"MainWindowViewModel: Error during CleanupAsync on {oldPage.GetType().Name} - {ex.Message}");
                 }
             }
+            else
+            {
+                LogDebug($"MainWindowViewModel: Page {oldPage.GetType().Name} does not implement ITestPage");
+            }
 
-            // Clear current page
+            // Clear current page reference
+            LogDebug($"MainWindowViewModel: Clearing CurrentTestPage reference");
             CurrentTestPage = null;
 
             // If the page implements IDisposable, dispose it
             if (oldPage is IDisposable disposable)
             {
-                disposable.Dispose();
+                try
+                {
+                    LogDebug($"MainWindowViewModel: Disposing {oldPage.GetType().Name}");
+                    disposable.Dispose();
+                    LogInfo($"MainWindowViewModel: Disposed {oldPage.GetType().Name}");
+                }
+                catch (Exception ex)
+                {
+                    LogError($"MainWindowViewModel: Error disposing {oldPage.GetType().Name} - {ex.Message}");
+                }
             }
 
-            System.Diagnostics.Debug.WriteLine($"[MainWindowViewModel] Page unloaded: {oldPage.GetType().Name}");
+            LogInfo($"MainWindowViewModel: UnloadCurrentTestPageAsync completed - page type: {oldPage.GetType().Name}");
         }
 
         /// <summary>
@@ -367,5 +434,24 @@ namespace LaptopHealth.ViewModels
                 indicator.Background = i == CurrentTestIndex ? primaryBrush : inactiveBrush;
             }
         }
+
+        #region Logging Helper Methods
+
+        private static void LogInfo(string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[INFO] {message}");
+        }
+
+        private static void LogDebug(string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DEBUG] {message}");
+        }
+
+        private static void LogError(string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ERROR] {message}");
+        }
+
+        #endregion
     }
 }
