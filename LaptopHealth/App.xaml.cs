@@ -219,6 +219,11 @@ namespace LaptopHealth
                 "Microphone Test",
                 "Tests microphone device enumeration and real-time frequency visualization"
             );
+
+            TestRegistry.Register<AudioTestPage>(
+                "Audio Test",
+                "Simple audio test page demonstrating MVVM structure with IAudioService"
+            );
         }
 
         protected override void OnExit(ExitEventArgs e)
