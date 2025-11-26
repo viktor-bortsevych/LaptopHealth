@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:LaptopHealth.Views"
         mc:Ignorable="d"
-        Title="LaptopHealth" Height="600" Width="900"
+        Title="LaptopHealth" Height="700" Width="1100"
         Background="{StaticResource WhiteBrush}"
         Icon="pack://application:,,,/Resources/Images/app.ico">
     <Window.Resources>

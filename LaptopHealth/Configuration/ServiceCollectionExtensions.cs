@@ -72,6 +72,7 @@ namespace LaptopHealth.Configuration
             services.AddTransient<CameraTestPageViewModel>();
             services.AddTransient<MicrophoneTestPageViewModel>();
             services.AddTransient<AudioTestPageViewModel>();
+            services.AddTransient<KeyboardTestPageViewModel>();
 
             return services;
         }
@@ -85,6 +86,7 @@ namespace LaptopHealth.Configuration
             services.AddTransient<CameraTestPage>();
             services.AddTransient<MicrophoneTestPage>();
             services.AddTransient<AudioTestPage>();
+            services.AddTransient<KeyboardTestPage>();
 
             return services;
         }

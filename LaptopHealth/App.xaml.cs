@@ -224,6 +224,11 @@ namespace LaptopHealth
                 "Audio Test",
                 "Simple audio test page demonstrating MVVM structure with IAudioService"
             );
+
+            TestRegistry.Register<KeyboardTestPage>(
+                "Keyboard Test",
+                "Tests keyboard keys and displays pressed keys"
+            );
         }
 
         protected override void OnExit(ExitEventArgs e)
