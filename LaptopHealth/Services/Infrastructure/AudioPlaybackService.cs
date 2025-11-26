@@ -201,7 +201,7 @@ namespace LaptopHealth.Services.Infrastructure
                 try
                 {
                     _waveOut.PlaybackStopped -= OnPlaybackStopped;
-                    
+
                     // Stop playback - this can potentially block briefly
                     if (_waveOut.PlaybackState != PlaybackState.Stopped)
                     {

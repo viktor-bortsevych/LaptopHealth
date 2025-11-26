@@ -75,26 +75,40 @@ namespace LaptopHealth.Services.Hardware
             {
                 try
                 {
+                    logger.Debug($"InitializeDeviceAsync: Initializing device {deviceName}");
+
                     // Stop any current capture first
+                    logger.Debug("InitializeDeviceAsync: Stopping any current capture");
                     await StopCaptureInternalAsync(opCt);
 
                     _isCapturing = false;
+                    logger.Debug("InitializeDeviceAsync: Cleaning up old capture");
                     CleanupCapture();
 
+                    // Create new VideoCapture with proper initialization
                     int deviceIndex = ExtractDeviceIndex(deviceName);
+                    logger.Debug($"InitializeDeviceAsync: Creating VideoCapture for device index {deviceIndex}");
+
                     _capture = CreateVideoCapture(deviceIndex);
 
-                    if (!ValidateCapture(_capture))
+                    logger.Debug($"InitializeDeviceAsync: VideoCapture created, checking if opened...");
+                    bool isOpened = _capture.IsOpened();
+                    logger.Debug($"InitializeDeviceAsync: VideoCapture IsOpened = {isOpened}");
+
+                    if (!isOpened)
                     {
+                        logger.Error($"InitializeDeviceAsync: Failed to open device {deviceName}");
                         CleanupCapture();
                         return false;
                     }
 
                     LogDeviceInfo(_capture, deviceName);
+                    logger.Info($"InitializeDeviceAsync: Device {deviceName} initialized successfully");
                     return true;
                 }
                 catch (OperationCanceledException)
                 {
+                    logger.Warn("InitializeDeviceAsync: Operation cancelled");
                     CleanupCapture();
                     return false;
                 }
@@ -110,16 +124,16 @@ namespace LaptopHealth.Services.Hardware
         public Task<bool> StartCaptureAsync(CancellationToken cancellationToken = default)
         {
             logger.Debug($"[StartCaptureAsync] Called with cancellation token: {cancellationToken.GetHashCode()}");
-            
+
             return ExecuteSequentiallyAsync(async (opCt) =>
             {
                 logger.Debug($"[StartCaptureAsync] Inside ExecuteSequentiallyAsync, opCt: {opCt.GetHashCode()}");
-                
+
                 try
                 {
                     if (_capture == null || !_capture.IsOpened())
                     {
-                        logger.Error("Cannot start: device not initialized");
+                        logger.Error($"Cannot start: device not initialized (capture={_capture}, isOpened={_capture?.IsOpened()})");
                         return false;
                     }
 
@@ -133,8 +147,15 @@ namespace LaptopHealth.Services.Hardware
                     _isCapturing = true;
 
                     logger.Debug("About to call WarmupCaptureAsync...");
-                    await WarmupCaptureAsync();
-                    logger.Debug("WarmupCaptureAsync completed");
+                    bool warmupSuccess = await WarmupCaptureAsync();
+                    logger.Debug($"WarmupCaptureAsync completed with success: {warmupSuccess}");
+
+                    if (!warmupSuccess)
+                    {
+                        logger.Error("Camera warmup failed - cannot start capture");
+                        _isCapturing = false;
+                        return false;
+                    }
 
                     logger.Info("Camera capture started successfully");
                     return true;
@@ -147,18 +168,32 @@ namespace LaptopHealth.Services.Hardware
                 }
                 catch (Exception ex)
                 {
-                    logger.Error("Start capture", ex);
+                    logger.Error($"Start capture exception: {ex.GetType().Name} - {ex.Message}", ex);
                     _isCapturing = false;
                     return false;
                 }
             }, cancellationToken);
         }
 
-        private async Task WarmupCaptureAsync()
+        private async Task<bool> WarmupCaptureAsync()
         {
             try
             {
                 logger.Debug("Starting camera warmup...");
+                logger.Debug($"Capture state: capture={_capture}, isOpened={_capture?.IsOpened()}, isCapturing={_isCapturing}");
+
+                if (_capture == null)
+                {
+                    logger.Error("WarmupCaptureAsync: capture is null!");
+                    return false;
+                }
+
+                if (!_capture.IsOpened())
+                {
+                    logger.Error("WarmupCaptureAsync: capture is not opened!");
+                    return false;
+                }
+
                 var warmupMat = new Mat();
                 int successfulReads = 0;
                 int totalAttempts = 0;
@@ -167,10 +202,24 @@ namespace LaptopHealth.Services.Hardware
                 {
                     totalAttempts++;
 
-                    if (_capture!.Read(warmupMat) && !warmupMat.Empty())
+                    try
                     {
-                        successfulReads++;
-                        logger.Debug($"Warmup frame {successfulReads}/3 captured");
+                        if (_capture!.Read(warmupMat) && !warmupMat.Empty())
+                        {
+                            successfulReads++;
+                            logger.Debug($"Warmup frame {successfulReads}/3 captured");
+                        }
+                        else
+                        {
+                            logger.Debug($"Warmup attempt {totalAttempts}: Read returned false or mat is empty");
+                            // Small delay between attempts to give the device time to respond
+                            await Task.Delay(10);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Debug($"Warmup attempt {totalAttempts} exception: {ex.GetType().Name} - {ex.Message}");
+                        await Task.Delay(10);
                     }
                 }
 
@@ -178,16 +227,19 @@ namespace LaptopHealth.Services.Hardware
 
                 if (successfulReads == 0)
                 {
-                    logger.Warn($"Camera warmup failed: Could not read frames after {totalAttempts} attempts");
+                    logger.Error($"Camera warmup FAILED: Could not read any frames after {totalAttempts} attempts");
+                    return false;
                 }
                 else
                 {
-                    logger.Debug($"Camera warmup successful: {successfulReads} frames in {totalAttempts} attempts");
+                    logger.Debug($"Camera warmup SUCCESSFUL: {successfulReads} frames in {totalAttempts} attempts");
+                    return true;
                 }
             }
             catch (Exception ex)
             {
-                logger.Warn($"Camera warmup warning: {ex.GetType().Name} - {ex.Message}");
+                logger.Error($"Camera warmup exception: {ex.GetType().Name} - {ex.Message}", ex);
+                return false;
             }
         }
 
@@ -205,14 +257,21 @@ namespace LaptopHealth.Services.Hardware
             {
                 try
                 {
+                    logger.Debug($"StopCaptureInternalAsync: isCapturing={_isCapturing}");
+
                     if (!_isCapturing)
                     {
+                        logger.Debug("StopCaptureInternalAsync: Not capturing, returning true");
                         return true;
                     }
 
+                    logger.Debug("StopCaptureInternalAsync: Setting _isCapturing = false");
                     _isCapturing = false;
 
+                    logger.Debug("StopCaptureInternalAsync: Disposing frame");
                     DisposeFrame();
+
+                    logger.Debug("StopCaptureInternalAsync: Completed");
                     return true;
                 }
                 catch (Exception ex)
@@ -259,7 +318,12 @@ namespace LaptopHealth.Services.Hardware
                         }
 
                         var bytes = EncodeFrameToBytes();
-                        logger.Debug($"GetCurrentFrameAsync: successfully encoded frame ({bytes.Length} bytes)");
+                        if (bytes == null || bytes.Length == 0)
+                        {
+                            logger.Debug("GetCurrentFrameAsync: encoded frame is empty");
+                            return null;
+                        }
+
                         return bytes;
                     }
                 }
@@ -318,7 +382,7 @@ namespace LaptopHealth.Services.Hardware
             CancellationToken userCancellationToken = default)
         {
             logger.Debug($"[ExecuteSequentiallyAsync] Entering, userCt: {userCancellationToken.GetHashCode()}");
-            
+
             // Cancel previous operation
             CancellationTokenSource? previousCts = null;
             lock (_operationCtsLock)
@@ -329,7 +393,7 @@ namespace LaptopHealth.Services.Hardware
                     previousCts = _currentOperationCts;
                 }
             }
-            
+
             if (previousCts != null)
             {
                 await previousCts.CancelAsync();
@@ -339,7 +403,7 @@ namespace LaptopHealth.Services.Hardware
                     _currentOperationCts = null;
                 }
             }
-            
+
             CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userCancellationToken);
             lock (_operationCtsLock)
             {
@@ -370,7 +434,7 @@ namespace LaptopHealth.Services.Hardware
             {
                 logger.Debug("[ExecuteSequentiallyAsync] Releasing semaphore");
                 _operationSemaphore.Release();
-                
+
                 // Clean up operation token source after operation completes
                 lock (_operationCtsLock)
                 {
@@ -603,9 +667,11 @@ namespace LaptopHealth.Services.Hardware
         {
             if (_capture != null)
             {
+                logger.Debug($"CleanupCapture: Releasing capture, IsOpened={_capture.IsOpened()}");
                 TryReleaseCapture(_capture);
                 TryDispose(_capture, "capture");
                 _capture = null;
+                logger.Debug("CleanupCapture: Capture cleanup completed");
             }
         }
 
@@ -613,11 +679,13 @@ namespace LaptopHealth.Services.Hardware
         {
             try
             {
+                logger.Debug("TryReleaseCapture: Calling Release()");
                 capture.Release();
+                logger.Debug("TryReleaseCapture: Release() completed");
             }
             catch (Exception ex)
             {
-                logger.Warn($"Warning releasing capture: {ex.GetType().Name}");
+                logger.Warn($"Warning releasing capture: {ex.GetType().Name} - {ex.Message}");
             }
         }
 
@@ -625,11 +693,13 @@ namespace LaptopHealth.Services.Hardware
         {
             try
             {
+                logger.Debug($"TryDispose: Disposing {resourceName}");
                 resource.Dispose();
+                logger.Debug($"TryDispose: {resourceName} disposed successfully");
             }
             catch (Exception ex)
             {
-                logger.Warn($"Warning disposing {resourceName}: {ex.GetType().Name}");
+                logger.Warn($"Warning disposing {resourceName}: {ex.GetType().Name} - {ex.Message}");
             }
         }
 

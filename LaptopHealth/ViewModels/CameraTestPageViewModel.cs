@@ -1,7 +1,6 @@
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels.Infrastructure;
 using System.Collections.ObjectModel;
-using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 
@@ -163,32 +162,36 @@ namespace LaptopHealth.ViewModels
         {
             try
             {
-                LogDebug("InitializeAsync started");
+                LogInfo("[CameraTestPageViewModel] InitializeAsync started");
+                LogInfo($"[CameraTestPageViewModel] Instance hash: {GetHashCode()}");
 
                 if (_isCleanedUp)
                 {
-                    LogDebug("WARNING: Page was already cleaned up, skipping auto-start");
+                    LogWarn("[CameraTestPageViewModel] WARNING: Page was already cleaned up, skipping auto-start");
                     return;
                 }
 
-                if (_frameRenderTask?.IsCompleted == false)
-                {
-                    LogDebug("WARNING: Frame capture still running from previous load - cleaning up");
-                    await StopCameraAsync(CancellationToken.None);
-                }
-
                 // Wait for devices to load
+                LogDebug("[CameraTestPageViewModel] Waiting for devices to load");
                 await _devicesLoadedTcs.Task;
 
                 if (_isCleanedUp)
                 {
-                    LogDebug("Page was cleaned up while loading devices, skipping auto-start");
+                    LogWarn("[CameraTestPageViewModel] Page was cleaned up while loading devices, skipping auto-start");
                     return;
                 }
 
                 // Auto-start camera if a device is selected
                 if (SelectedDevice != null && !_cameraService.IsCameraRunning)
                 {
+                    LogInfo("[CameraTestPageViewModel] Auto-starting camera with device: " + SelectedDevice);
+
+                    // CRITICAL FIX: Re-initialize the device when returning to the camera page
+                    // This ensures the VideoCapture object is in a fresh state
+                    LogDebug("[CameraTestPageViewModel] Re-initializing device to ensure fresh state");
+                    await _cameraService.SelectDeviceAsync(SelectedDevice);
+                    LogDebug("[CameraTestPageViewModel] Device re-initialization completed");
+
                     await ExecuteCameraOperationAsync(async ct =>
                     {
                         await StartCameraAsync(ct);
@@ -196,10 +199,12 @@ namespace LaptopHealth.ViewModels
                         UpdateLastAction();
                     }, "Auto-Start Camera");
                 }
+
+                LogInfo("[CameraTestPageViewModel] InitializeAsync completed successfully");
             }
             catch (Exception ex)
             {
-                LogError("Auto-start camera on page load", ex);
+                LogError("[CameraTestPageViewModel] Auto-start camera on page load", ex);
             }
         }
 
@@ -210,29 +215,40 @@ namespace LaptopHealth.ViewModels
         {
             if (_isCleanedUp)
             {
-                LogDebug("CleanupAsync already called, skipping");
+                LogWarn("[CameraTestPageViewModel] CleanupAsync already called, skipping");
                 return;
             }
 
+            LogInfo("[CameraTestPageViewModel] ===============================================================================");
+            LogInfo("[CameraTestPageViewModel] CleanupAsync starting");
+            LogInfo($"[CameraTestPageViewModel] Instance hash: {GetHashCode()}");
+            LogInfo($"[CameraTestPageViewModel] Is camera running: {_cameraService.IsCameraRunning}");
+            LogInfo($"[CameraTestPageViewModel] Frame render task active: {_frameRenderTask?.IsCompleted == false}");
+
             _isCleanedUp = true;
-            LogDebug("CleanupAsync starting");
 
             try
             {
                 // Cancel any ongoing operations
-                _currentOperationCts?.CancelAsync();
+                LogDebug("[CameraTestPageViewModel] Cancelling ongoing operations");
+                if (_currentOperationCts != null)
+                {
+                    await _currentOperationCts.CancelAsync();
+                    LogDebug("[CameraTestPageViewModel] Current operation cancelled");
+                }
 
                 // Stop camera if running
                 if (_cameraService.IsCameraRunning)
                 {
-                    LogDebug("Stopping camera during cleanup");
+                    LogInfo("[CameraTestPageViewModel] Stopping camera during cleanup");
                     await StopCameraAsync(CancellationToken.None);
+                    LogInfo("[CameraTestPageViewModel] Camera stopped");
                 }
 
                 // Stop frame capture if still running
                 if (_frameRenderTask?.IsCompleted == false)
                 {
-                    LogDebug("Cancelling frame capture during cleanup");
+                    LogDebug("[CameraTestPageViewModel] Cancelling frame capture during cleanup");
                     if (_frameCaptureTokenSource != null)
                     {
                         await _frameCaptureTokenSource.CancelAsync();
@@ -241,15 +257,28 @@ namespace LaptopHealth.ViewModels
                     // Wait for frame task to complete
                     if (_frameRenderTask != null)
                     {
-                        await Task.WhenAny(_frameRenderTask, Task.Delay(1000));
+                        LogDebug("[CameraTestPageViewModel] Waiting for frame task to complete (max 1 second)");
+                        var completed = await Task.WhenAny(_frameRenderTask, Task.Delay(1000));
+                        if (completed == _frameRenderTask)
+                        {
+                            LogInfo("[CameraTestPageViewModel] Frame task completed");
+                        }
+                        else
+                        {
+                            LogWarn("[CameraTestPageViewModel] Frame task did not complete within timeout");
+                        }
                     }
                 }
 
-                LogDebug("CleanupAsync completed successfully");
+                LogInfo("[CameraTestPageViewModel] CleanupAsync completed successfully");
             }
             catch (Exception ex)
             {
-                LogError("CleanupAsync", ex);
+                LogError("[CameraTestPageViewModel] CleanupAsync", ex);
+            }
+            finally
+            {
+                LogInfo("[CameraTestPageViewModel] ===============================================================================");
             }
         }
 
@@ -259,22 +288,32 @@ namespace LaptopHealth.ViewModels
 
         private async Task LoadAvailableDevicesAsync()
         {
+            LogInfo("[CameraTestPageViewModel] LoadAvailableDevicesAsync starting");
             _isLoadingDevices = true;
 
             try
             {
                 var devices = (await _cameraService.GetAvailableDevicesAsync()).ToList();
 
+                LogInfo($"[CameraTestPageViewModel] Found {devices.Count} camera device(s)");
+                for (int i = 0; i < devices.Count; i++)
+                {
+                    LogDebug($"[CameraTestPageViewModel]   Device {i}: {devices[i]}");
+                }
+
                 AvailableDevices.Clear();
 
                 if (devices.Count == 0)
                 {
+                    LogWarn("[CameraTestPageViewModel] No camera devices found");
                     ShowNoDevicesState();
                 }
                 else
                 {
+                    LogInfo($"[CameraTestPageViewModel] Showing {devices.Count} devices in UI");
                     ShowDevicesAvailableState(devices);
                     SelectedDevice = devices[0];
+                    LogInfo($"[CameraTestPageViewModel] Auto-selected first device: {devices[0]}");
                 }
 
                 UpdateLastAction();
@@ -283,11 +322,13 @@ namespace LaptopHealth.ViewModels
             {
                 _isLoadingDevices = false;
                 _devicesLoadedTcs.TrySetResult(true);
+                LogDebug("[CameraTestPageViewModel] LoadAvailableDevicesAsync completed");
             }
         }
 
         private async Task HandleDeviceSelectionChangedAsync(string deviceName)
         {
+            LogInfo($"[CameraTestPageViewModel] Device selection changed: {deviceName}");
             try
             {
                 await ExecuteCameraOperationAsync(async ct =>
@@ -295,13 +336,15 @@ namespace LaptopHealth.ViewModels
                     // Stop current camera if running
                     if (_cameraService.IsCameraRunning)
                     {
+                        LogDebug("[CameraTestPageViewModel] Stopping camera before device switch");
                         await StopCameraAsync(ct);
                     }
 
                     // Select new device
+                    LogDebug($"[CameraTestPageViewModel] Selecting device: {deviceName}");
                     await _cameraService.SelectDeviceAsync(deviceName);
 
-                    LogDebug($"Device switched to: {deviceName}");
+                    LogInfo($"[CameraTestPageViewModel] Device switched successfully to: {deviceName}");
                     UpdateCameraStatus();
                     UpdateLastAction();
 
@@ -309,7 +352,7 @@ namespace LaptopHealth.ViewModels
             }
             catch (OperationCanceledException ex)
             {
-                LogDebug($"Device selection canceled: {ex.Message}");
+                LogDebug($"[CameraTestPageViewModel] Device selection canceled: {ex.Message}");
             }
         }
 
@@ -319,16 +362,19 @@ namespace LaptopHealth.ViewModels
 
         private async Task ToggleCameraAsync()
         {
+            LogInfo("[CameraTestPageViewModel] Toggle camera command invoked");
             try
             {
                 await ExecuteCameraOperationAsync(async ct =>
                 {
                     if (_cameraService.IsCameraRunning)
                     {
+                        LogInfo("[CameraTestPageViewModel] Camera is running, stopping");
                         await StopCameraAsync(ct);
                     }
                     else
                     {
+                        LogInfo("[CameraTestPageViewModel] Camera is stopped, starting");
                         await StartCameraAsync(ct);
                     }
 
@@ -339,79 +385,117 @@ namespace LaptopHealth.ViewModels
             }
             catch (OperationCanceledException ex)
             {
-                LogDebug($"Toggle camera canceled: {ex.Message}");
+                LogDebug($"[CameraTestPageViewModel] Toggle camera canceled: {ex.Message}");
             }
         }
 
         private async Task StartCameraAsync(CancellationToken ct)
         {
+            LogInfo("[CameraTestPageViewModel] StartCameraAsync called");
+
             if (_isCleanedUp)
             {
-                LogDebug("Page is being cleaned up, aborting camera start");
+                LogWarn("[CameraTestPageViewModel] Page is being cleaned up, aborting camera start");
                 return;
             }
 
             // Ensure device is selected
             if (_cameraService.SelectedDevice == null)
             {
+                LogDebug("[CameraTestPageViewModel] No device currently selected, selecting from UI");
                 if (SelectedDevice != null)
                 {
                     await _cameraService.SelectDeviceAsync(SelectedDevice);
+                    LogInfo($"[CameraTestPageViewModel] Selected device: {SelectedDevice}");
                 }
                 else
                 {
                     CameraStatusText = "No Device Selected";
+                    LogWarn("[CameraTestPageViewModel] No device available to start camera");
                     return;
                 }
             }
 
             ct.ThrowIfCancellationRequested();
 
+            LogDebug("[CameraTestPageViewModel] Calling StartCameraAsync on service");
             var result = await _cameraService.StartCameraAsync();
 
             if (result)
             {
-                StartFrameCapture();
-                UpdateUIForRunningCamera();
+                LogInfo("[CameraTestPageViewModel] Camera started successfully");
+
+                // Small delay to ensure camera hardware is fully initialized before frame capture
+                await Task.Delay(100, ct);
+
+                // Verify camera is actually running
+                if (_cameraService.IsCameraRunning)
+                {
+                    StartFrameCapture();
+                    UpdateUIForRunningCamera();
+                }
+                else
+                {
+                    LogError("[CameraTestPageViewModel] Camera reported success but not running", null);
+                    CameraStatusText = "Camera Start Failed - Not Running";
+                }
             }
             else
             {
+                LogError("[CameraTestPageViewModel] Failed to start camera", null);
                 CameraStatusText = "Failed to Start";
             }
         }
 
         private async Task StopCameraAsync(CancellationToken ct)
         {
+            LogInfo("[CameraTestPageViewModel] StopCameraAsync called");
+
             // Cancel frame capture
             if (_frameCaptureTokenSource != null)
             {
+                LogDebug("[CameraTestPageViewModel] Cancelling frame capture token source");
                 await _frameCaptureTokenSource.CancelAsync();
             }
 
             // Wait for frame task (with timeout)
             if (_frameRenderTask != null && !_frameRenderTask.IsCompleted)
             {
+                LogDebug("[CameraTestPageViewModel] Waiting for frame render task to complete");
                 await Task.WhenAny(_frameRenderTask, Task.Delay(STOP_TIMEOUT_MS, ct));
+                if (_frameRenderTask.IsCompleted)
+                {
+                    LogDebug("[CameraTestPageViewModel] Frame render task completed");
+                }
+                else
+                {
+                    LogWarn("[CameraTestPageViewModel] Frame render task did not complete within timeout");
+                }
             }
 
             ct.ThrowIfCancellationRequested();
 
             // Stop hardware
+            LogDebug("[CameraTestPageViewModel] Calling StopCameraAsync on service");
             await _cameraService.StopCameraAsync();
+            LogInfo("[CameraTestPageViewModel] Camera service stopped");
 
             // Update UI
             ClearCameraPreview();
 
             // Cleanup
+            LogDebug("[CameraTestPageViewModel] Disposing frame capture resources");
             _frameCaptureTokenSource?.Dispose();
             _frameCaptureTokenSource = null;
             _frameRenderTask = null;
 
             UpdateUIForStoppedCamera();
+            LogInfo("[CameraTestPageViewModel] StopCameraAsync completed");
         }
 
         private async Task RefreshDevicesAsync()
         {
+            LogInfo("[CameraTestPageViewModel] Refresh devices command invoked");
             try
             {
                 await ExecuteCameraOperationAsync(async ct =>
@@ -421,6 +505,7 @@ namespace LaptopHealth.ViewModels
                     // Stop camera if running
                     if (_cameraService.IsCameraRunning)
                     {
+                        LogDebug("[CameraTestPageViewModel] Stopping camera before device refresh");
                         await StopCameraAsync(ct);
                     }
 
@@ -429,20 +514,22 @@ namespace LaptopHealth.ViewModels
                 }, "Stop Camera Before Refresh");
 
                 // Load devices OUTSIDE the cancellable operation
+                LogDebug("[CameraTestPageViewModel] Loading available devices");
                 await LoadAvailableDevicesAsync();
 
                 // Auto-select and initialize first device (but don't start)
                 if (AvailableDevices.Count > 0 && SelectedDevice != null)
                 {
+                    LogInfo($"[CameraTestPageViewModel] Re-initializing device after refresh: {SelectedDevice}");
                     await _cameraService.SelectDeviceAsync(SelectedDevice);
-                    LogDebug($"Device re-initialized after refresh: {SelectedDevice}");
                 }
 
                 LastActionText = "Devices refreshed";
+                LogInfo("[CameraTestPageViewModel] Device refresh completed");
             }
             catch (OperationCanceledException ex)
             {
-                LogDebug($"Refresh devices canceled: {ex.Message}");
+                LogDebug($"[CameraTestPageViewModel] Refresh devices canceled: {ex.Message}");
             }
         }
 
@@ -452,8 +539,10 @@ namespace LaptopHealth.ViewModels
 
         private void StartFrameCapture()
         {
+            LogInfo("[CameraTestPageViewModel] StartFrameCapture called");
             if (IsFrameCaptureRunning())
             {
+                LogWarn("[CameraTestPageViewModel] Frame capture already running, skipping");
                 return;
             }
 
@@ -467,33 +556,69 @@ namespace LaptopHealth.ViewModels
 
         private void InitializeNewFrameCapture()
         {
-            _frameCaptureTokenSource?.Dispose();
+            LogInfo("[CameraTestPageViewModel] Initializing new frame capture");
+
+            // Ensure previous token source is disposed
+            if (_frameCaptureTokenSource != null)
+            {
+                try
+                {
+                    _frameCaptureTokenSource.Dispose();
+                }
+                catch
+                {
+                    // Ignore disposal errors
+                }
+            }
+
             _frameCaptureTokenSource = new CancellationTokenSource();
             _frameRenderTask = CaptureFrameLoopAsync(_frameCaptureTokenSource.Token);
+            LogDebug("[CameraTestPageViewModel] Frame capture loop task started");
+
+            // Verify that the task actually started
+            if (_frameRenderTask == null || _frameRenderTask.IsCompleted)
+            {
+                LogError("[CameraTestPageViewModel] Frame capture task failed to start properly", null);
+            }
         }
 
         private async Task CaptureFrameLoopAsync(CancellationToken cancellationToken)
         {
-            LogDebug("Frame capture loop STARTED");
+            LogInfo("[CameraTestPageViewModel] Frame capture loop STARTED");
+            int frameCount = 0;
 
             try
             {
+                // Ensure camera is actually running before starting frame capture loop
+                if (!_cameraService.IsCameraRunning)
+                {
+                    LogWarn("[CameraTestPageViewModel] Frame capture loop starting but camera is not running - exiting");
+                    return;
+                }
+
                 while (ShouldContinueCapture(cancellationToken))
                 {
                     await ProcessSingleFrameAsync(cancellationToken);
+                    frameCount++;
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                LogDebug($"[CameraTestPageViewModel] Frame capture loop cancelled after {frameCount} frames");
+                throw;
             }
             finally
             {
-                LogDebug("Frame capture loop COMPLETED");
+                LogInfo($"[CameraTestPageViewModel] Frame capture loop COMPLETED after {frameCount} frames");
             }
         }
 
         private bool ShouldContinueCapture(CancellationToken cancellationToken)
         {
-            return !cancellationToken.IsCancellationRequested
+            bool shouldContinue = !cancellationToken.IsCancellationRequested
                    && _cameraService.IsCameraRunning
                    && !_isCleanedUp;
+            return shouldContinue;
         }
 
         private async Task ProcessSingleFrameAsync(CancellationToken cancellationToken)
@@ -515,7 +640,7 @@ namespace LaptopHealth.ViewModels
             }
             catch (Exception ex)
             {
-                LogError("Frame capture", ex);
+                LogError("[CameraTestPageViewModel] Frame capture", ex);
                 await Task.Delay(ERROR_RETRY_DELAY_MS, cancellationToken);
             }
         }
@@ -549,7 +674,7 @@ namespace LaptopHealth.ViewModels
             }
             catch (Exception ex)
             {
-                LogError("Create bitmap", ex);
+                System.Diagnostics.Debug.WriteLine($"[CameraTestPageViewModel] Error creating bitmap: {ex.Message}");
                 return null;
             }
         }
@@ -646,7 +771,7 @@ namespace LaptopHealth.ViewModels
             // Check if page is being cleaned up
             if (_isCleanedUp)
             {
-                LogDebug($"Page is being cleaned up, skipping operation: {operationName}");
+                LogWarn($"[CameraTestPageViewModel] Page is being cleaned up, skipping operation: {operationName}");
                 return default!;
             }
 
@@ -658,6 +783,7 @@ namespace LaptopHealth.ViewModels
             // Cancel any in-progress operation
             if (_currentOperationCts != null)
             {
+                LogDebug($"[CameraTestPageViewModel] Cancelling previous operation before: {operationName}");
                 await _currentOperationCts.CancelAsync();
             }
 
@@ -669,21 +795,21 @@ namespace LaptopHealth.ViewModels
                 _currentOperationCts?.Dispose();
                 _currentOperationCts = new CancellationTokenSource();
 
-                LogDebug($"Starting: {operationName}");
+                LogDebug($"[CameraTestPageViewModel] Starting: {operationName}");
 
                 var result = await operation(_currentOperationCts.Token);
 
-                LogDebug($"Completed: {operationName}");
+                LogDebug($"[CameraTestPageViewModel] Completed: {operationName}");
                 return result;
             }
             catch (OperationCanceledException)
             {
-                LogDebug($"Cancelled: {operationName}");
+                LogDebug($"[CameraTestPageViewModel] Cancelled: {operationName}");
                 throw;
             }
             catch (Exception ex)
             {
-                LogError(operationName, ex);
+                LogError($"[CameraTestPageViewModel] {operationName}", ex);
                 throw;
             }
             finally
@@ -712,14 +838,25 @@ namespace LaptopHealth.ViewModels
             }, operationName);
         }
 
-        private static void LogDebug(string message)
+        private static void LogInfo(string message)
         {
-            System.Diagnostics.Debug.WriteLine($"[CameraTestPageViewModel] {message}");
+            System.Diagnostics.Debug.WriteLine(message);
         }
 
-        private static void LogError(string operation, Exception ex)
+        private static void LogDebug(string message)
         {
-            System.Diagnostics.Debug.WriteLine($"[CameraTestPageViewModel] Error in {operation}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine(message);
+        }
+
+        private static void LogWarn(string message)
+        {
+            System.Diagnostics.Debug.WriteLine(message);
+        }
+
+        private static void LogError(string operation, Exception? ex)
+        {
+            string message = $"[CameraTestPageViewModel] Error in {operation}: {ex?.Message}";
+            System.Diagnostics.Debug.WriteLine(message);
         }
 
         #endregion
@@ -731,28 +868,40 @@ namespace LaptopHealth.ViewModels
         protected virtual void Dispose(bool disposing)
         {
             if (_disposed)
+            {
                 return;
+            }
 
             if (disposing)
             {
-                // Dispose managed resources
-                _uiOperationLock.Dispose();
+                // Dispose managed resources only when called from Dispose(), not from finalizer
+                LogInfo("[CameraTestPageViewModel] Dispose(bool) called");
+                LogInfo($"[CameraTestPageViewModel] Instance hash: {GetHashCode()}");
+
+                LogDebug("[CameraTestPageViewModel] Disposing UI operation lock");
+                _uiOperationLock?.Dispose();
+
+                LogDebug("[CameraTestPageViewModel] Disposing current operation CTS");
                 _currentOperationCts?.Dispose();
+
+                LogDebug("[CameraTestPageViewModel] Disposing frame capture token source");
                 _frameCaptureTokenSource?.Dispose();
+
+                LogInfo("[CameraTestPageViewModel] All managed resources disposed");
             }
 
             _disposed = true;
+        }
+
+        ~CameraTestPageViewModel()
+        {
+            Dispose(false);
         }
 
         public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
-        }
-
-        ~CameraTestPageViewModel()
-        {
-            Dispose(false);
         }
 
         #endregion

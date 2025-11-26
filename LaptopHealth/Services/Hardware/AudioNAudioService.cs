@@ -20,11 +20,11 @@ namespace LaptopHealth.Services.Hardware
         private readonly Lock _lockObject = new();
         private readonly ILogger _logger;
         private bool _disposed;
-        
+
         // Pre-computed values for FFT optimization
         private readonly float[] _hammingWindow;
         private readonly Complex[] _fftBuffer;
-        
+
         // Snapshot buffer for FFT to avoid race conditions
         private readonly float[] _fftInputBuffer;
         private volatile bool _bufferNeedsAnalysis;
@@ -46,7 +46,7 @@ namespace LaptopHealth.Services.Hardware
             _hammingWindow = new float[BUFFER_SIZE];
             _fftInputBuffer = new float[BUFFER_SIZE];
             _binMap = new int[FREQUENCY_BANDS + 1];
-            
+
             InitializeHammingWindow();
             InitializeBinMap();
         }
@@ -161,7 +161,7 @@ namespace LaptopHealth.Services.Hardware
                 _waveIn.DataAvailable += ProcessAudioData;
                 _waveIn.StartRecording();
                 _isCapturing = true;
-                
+
                 lock (_lockObject)
                 {
                     _bufferIndex = 0;
@@ -247,7 +247,7 @@ namespace LaptopHealth.Services.Hardware
                     short sample = BitConverter.ToInt16(e.Buffer, i * 2);
                     int currentIndex = _bufferIndex;
                     _buffer[currentIndex] = sample / 32768f;
-                    
+
                     // Update index atomically
                     int nextIndex = (currentIndex + 1) % BUFFER_SIZE;
                     _bufferIndex = nextIndex;
@@ -345,7 +345,7 @@ namespace LaptopHealth.Services.Hardware
         private static void FFTCooleyTukey(Complex[] buffer)
         {
             int n = buffer.Length;
-            
+
             // Bit-reversal permutation
             int bits = (int)Math.Log2(n);
             for (int i = 0; i < n; i++)
@@ -369,13 +369,13 @@ namespace LaptopHealth.Services.Hardware
                     {
                         float angle = angleStep * k;
                         Complex w = new((float)Math.Cos(angle), (float)Math.Sin(angle));
-                        
+
                         int evenIndex = start + k;
                         int oddIndex = start + k + halfSize;
-                        
+
                         Complex even = buffer[evenIndex];
                         Complex odd = buffer[oddIndex] * w;
-                        
+
                         buffer[evenIndex] = even + odd;
                         buffer[oddIndex] = even - odd;
                     }
