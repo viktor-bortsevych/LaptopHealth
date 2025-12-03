@@ -283,6 +283,12 @@ namespace LaptopHealth.ViewModels
             TestAudioOptions.Add("Sine Wave (880 Hz - A5)");
             TestAudioOptions.Add("White Noise");
             TestAudioOptions.Add("Pink Noise");
+
+            // Select the first audio option if available
+            if (TestAudioOptions.Count > 0)
+            {
+                SelectedTestAudio = TestAudioOptions[0];
+            }
         }
 
         private static string GetSoundsDirectory()

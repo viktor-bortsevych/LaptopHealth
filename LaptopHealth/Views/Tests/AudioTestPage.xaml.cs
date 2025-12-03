@@ -1,10 +1,12 @@
 using LaptopHealth.Services.Interfaces;
 using LaptopHealth.ViewModels;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace LaptopHealth.Views.Tests
 {
-    public partial class AudioTestPage : UserControl, ITestPage
+    public partial class AudioTestPage : UserControl, ITestPage, IKeyboardShortcutHandler
     {
         private readonly AudioTestPageViewModel _viewModel;
 
@@ -24,6 +26,50 @@ namespace LaptopHealth.Views.Tests
             LogInfo($"[AudioTestPage] ViewModel type: {_viewModel.GetType().Name}");
             LogInfo($"[AudioTestPage] ViewModel hash: {_viewModel.GetHashCode()}");
             LogInfo("[AudioTestPage] Constructor completed");
+
+            // Subscribe to preview keyboard events as fallback for when this control has focus
+            this.PreviewKeyDown += AudioTestPage_PreviewKeyDown;
+        }
+
+        private void AudioTestPage_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            HandleKeyDown(e.Key);
+        }
+
+        public bool HandleKeyDown(Key key)
+        {
+            switch (key)
+            {
+                case Key.Space:
+                    if (_viewModel.PlayCommand.CanExecute(null))
+                    {
+                        _viewModel.PlayCommand.Execute(null);
+                        return true;
+                    }
+                    break;
+                case Key.Z:
+                    if (_viewModel.SetBalanceLeftCommand.CanExecute(null))
+                    {
+                        _viewModel.SetBalanceLeftCommand.Execute(null);
+                        return true;
+                    }
+                    break;
+                case Key.X:
+                    if (_viewModel.SetBalanceMidCommand.CanExecute(null))
+                    {
+                        _viewModel.SetBalanceMidCommand.Execute(null);
+                        return true;
+                    }
+                    break;
+                case Key.C:
+                    if (_viewModel.SetBalanceRightCommand.CanExecute(null))
+                    {
+                        _viewModel.SetBalanceRightCommand.Execute(null);
+                        return true;
+                    }
+                    break;
+            }
+            return false;
         }
 
         public async Task CleanupAsync()

@@ -1,4 +1,5 @@
-﻿using LaptopHealth.ViewModels;
+﻿using LaptopHealth.Services.Interfaces;
+using LaptopHealth.ViewModels;
 using System.Windows;
 using System.Windows.Input;
 
@@ -22,11 +23,22 @@ namespace LaptopHealth.Views
             Loaded += async (s, e) => await _viewModel.InitializeAsync();
 
             // Handle key events and delegate to ViewModel
-            KeyDown += OnKeyDown;
+            PreviewKeyDown += OnPreviewKeyDown;
         }
 
-        private void OnKeyDown(object sender, KeyEventArgs e)
+        private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
+            // First, check if the current page is a keyboard shortcut handler
+            if (_viewModel.CurrentTestPage is IKeyboardShortcutHandler shortcutHandler)
+            {
+                if (shortcutHandler.HandleKeyDown(e.Key))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            // Then handle navigation commands
             if (_viewModel.KeyNavigationCommand.CanExecute(e))
             {
                 _viewModel.KeyNavigationCommand.Execute(e);

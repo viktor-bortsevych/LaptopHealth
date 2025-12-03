@@ -5,7 +5,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:behaviors="clr-namespace:LaptopHealth.Behaviors"
     mc:Ignorable="d" 
-    d:DesignHeight="600" d:DesignWidth="900">
+    d:DesignHeight="600" d:DesignWidth="900"
+    Focusable="True">
 
     <UserControl.Resources>
         <ResourceDictionary>
@@ -170,28 +171,31 @@
                         </Grid.ColumnDefinitions>
                         
                         <Button Grid.Column="0"
-                                Content="Left"
+                                Content="Left (Z)"
                                 Style="{StaticResource OutlineButtonStyle}"
                                 Command="{Binding SetBalanceLeftCommand}"
                                 Height="36"
                                 Margin="0,0,4,0"
-                                Padding="0"/>
+                                Padding="0"
+                                ToolTip="Press Z key"/>
                         
                         <Button Grid.Column="1"
-                                Content="Mid"
+                                Content="Mid (X)"
                                 Style="{StaticResource OutlineButtonStyle}"
                                 Command="{Binding SetBalanceMidCommand}"
                                 Height="36"
                                 Margin="4,0,4,0"
-                                Padding="0"/>
+                                Padding="0"
+                                ToolTip="Press X key"/>
                         
                         <Button Grid.Column="2"
-                                Content="Right"
+                                Content="Right (C)"
                                 Style="{StaticResource OutlineButtonStyle}"
                                 Command="{Binding SetBalanceRightCommand}"
                                 Height="36"
                                 Margin="4,0,0,0"
-                                Padding="0"/>
+                                Padding="0"
+                                ToolTip="Press C key"/>
                     </Grid>
                 </StackPanel>
             </Border>
@@ -331,7 +335,8 @@
                             Style="{StaticResource DefaultButtonStyle}"
                             Command="{Binding PlayCommand}"
                             Height="44"
-                            Margin="0,0,0,8"/>
+                            Margin="0,0,0,8"
+                            ToolTip="Press Space key to play"/>
 
                     <Button Content="{Binding StopButtonContent}"
                             Style="{StaticResource OutlineButtonStyle}"
