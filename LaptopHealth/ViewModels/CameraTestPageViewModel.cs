@@ -20,7 +20,7 @@ namespace LaptopHealth.ViewModels
         private CancellationTokenSource? _currentOperationCts;
         private bool _isLoadingDevices;
         private bool _isCleanedUp;
-        private readonly TaskCompletionSource<bool> _devicesLoadedTcs = new();
+        private TaskCompletionSource<bool>? _devicesLoadedTcs;
 
         private const int FRAME_DELAY_MS = 33;
         private const int STOP_TIMEOUT_MS = 2000;
@@ -135,6 +135,7 @@ namespace LaptopHealth.ViewModels
         public CameraTestPageViewModel(ICameraService cameraService)
         {
             _cameraService = cameraService ?? throw new ArgumentNullException(nameof(cameraService));
+            _devicesLoadedTcs = new TaskCompletionSource<bool>();
 
             // Initialize commands
             StartStopCameraCommand = new AsyncRelayCommand(
@@ -172,8 +173,11 @@ namespace LaptopHealth.ViewModels
                 }
 
                 // Wait for devices to load
-                LogDebug("[CameraTestPageViewModel] Waiting for devices to load");
-                await _devicesLoadedTcs.Task;
+                if (_devicesLoadedTcs != null)
+                {
+                    LogDebug("[CameraTestPageViewModel] Waiting for devices to load");
+                    await _devicesLoadedTcs.Task;
+                }
 
                 if (_isCleanedUp)
                 {
@@ -278,6 +282,8 @@ namespace LaptopHealth.ViewModels
             }
             finally
             {
+                // Dispose TaskCompletionSource to release task continuations
+                _devicesLoadedTcs = null;
                 LogInfo("[CameraTestPageViewModel] ===============================================================================");
             }
         }
@@ -321,7 +327,7 @@ namespace LaptopHealth.ViewModels
             finally
             {
                 _isLoadingDevices = false;
-                _devicesLoadedTcs.TrySetResult(true);
+                _devicesLoadedTcs?.TrySetResult(true);
                 LogDebug("[CameraTestPageViewModel] LoadAvailableDevicesAsync completed");
             }
         }
@@ -886,6 +892,9 @@ namespace LaptopHealth.ViewModels
 
                 LogDebug("[CameraTestPageViewModel] Disposing frame capture token source");
                 _frameCaptureTokenSource?.Dispose();
+
+                LogDebug("[CameraTestPageViewModel] Clearing devices loaded TCS");
+                _devicesLoadedTcs = null;
 
                 LogInfo("[CameraTestPageViewModel] All managed resources disposed");
             }

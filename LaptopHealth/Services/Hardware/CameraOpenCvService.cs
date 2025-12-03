@@ -194,7 +194,7 @@ namespace LaptopHealth.Services.Hardware
                     return false;
                 }
 
-                var warmupMat = new Mat();
+                using var warmupMat = new Mat();
                 int successfulReads = 0;
                 int totalAttempts = 0;
 
@@ -222,8 +222,6 @@ namespace LaptopHealth.Services.Hardware
                         await Task.Delay(10);
                     }
                 }
-
-                warmupMat.Dispose();
 
                 if (successfulReads == 0)
                 {
@@ -417,13 +415,10 @@ namespace LaptopHealth.Services.Hardware
 
             try
             {
-                using (linkedCts)
-                {
-                    logger.Debug("[ExecuteSequentiallyAsync] Executing operation...");
-                    var result = await operation(linkedCts.Token);
-                    logger.Debug($"[ExecuteSequentiallyAsync] Operation completed with result: {result}");
-                    return result;
-                }
+                logger.Debug("[ExecuteSequentiallyAsync] Executing operation...");
+                var result = await operation(linkedCts.Token);
+                logger.Debug($"[ExecuteSequentiallyAsync] Operation completed with result: {result}");
+                return result;
             }
             catch (OperationCanceledException ex)
             {
@@ -438,7 +433,20 @@ namespace LaptopHealth.Services.Hardware
                 // Clean up operation token source after operation completes
                 lock (_operationCtsLock)
                 {
-                    _currentOperationCts = null;
+                    if (_currentOperationCts == linkedCts)
+                    {
+                        _currentOperationCts = null;
+                    }
+                }
+
+                // Dispose linked CTS - this must happen AFTER all operations are complete
+                try
+                {
+                    linkedCts?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn($"[ExecuteSequentiallyAsync] Error disposing linked CTS: {ex.Message}");
                 }
             }
         }

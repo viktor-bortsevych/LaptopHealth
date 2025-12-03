@@ -10,7 +10,7 @@ namespace LaptopHealth.Views
     /// <summary>
     /// Interaction logic for KeyboardTestPage.xaml
     /// </summary>
-    public partial class KeyboardTestPage : UserControl, ITestPage
+    public partial class KeyboardTestPage : UserControl, ITestPage, IKeyboardShortcutHandler
     {
         private readonly KeyboardTestPageViewModel _viewModel;
         private readonly Dictionary<Key, Button> _keyButtonMap = [];
@@ -144,6 +144,20 @@ namespace LaptopHealth.Views
                     button.Foreground = _whiteBrush;
                 }
             }
+        }
+
+        /// <summary>
+        /// Handles keyboard shortcuts. Arrow keys are consumed on this page to prevent navigation.
+        /// </summary>
+        public bool HandleKeyDown(Key key)
+        {
+            if (key == Key.Left || key == Key.Right || key == Key.Up || key == Key.Down)
+            {
+                LogDebug($"[KeyboardTestPage] Arrow key {key} consumed for testing");
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
